@@ -1,0 +1,11 @@
+# Supabase CLI settings for this project (ref aokegaxznbobbuqnwgdo).
+project_id = "desert-pearl-poultry"
+
+[functions.pin-login]
+verify_jwt = false
+[functions.change-pin]
+verify_jwt = false
+[functions.staff-admin]
+verify_jwt = false
+[functions.push-notify]
+verify_jwt = false
