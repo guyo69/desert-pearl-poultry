@@ -32,8 +32,8 @@ export function Login() {
   return (
     <div className="login">
       <div className="hero"><div className="hero-in">
-        <div className="brand"><span className="egg"><Icon name="egg" /></span><div><h1>Desert Pearl Poultry Manager</h1><div style={{ opacity: 0.85 }}>Tuala Farm Fresh Eggs · Kagundo</div></div></div>
-        <p>Tap your name, then enter your PIN.</p>
+        <div className="brand"><img src="/icon.svg" alt="" /><div><h1>Desert Pearl</h1><div className="muted" style={{ fontSize: 16 }}>Tuala Farm Fresh Eggs · Kagundo</div></div></div>
+        <p>Choose your name, then enter your PIN.</p>
       </div></div>
       <div className="body"><div className="body-in">
         {err && <div className="banner warn" style={{ marginTop: 16 }}><div><b>Cannot load the staff list</b><p>{err}</p></div><button className="btn sm" onClick={load}>Try again</button></div>}
@@ -86,9 +86,9 @@ function PinPad({ who, onBack }: { who: DirectoryEntry; onBack: () => void }) {
   return (
     <div className="login">
       <div className="hero"><div className="hero-in">
-        <button className="btn sm alt" onClick={onBack} style={{ marginBottom: 14 }}><Icon name="back" />Back</button>
+        <button className="lnk" onClick={onBack} style={{ marginBottom: 18, display: 'inline-flex', alignItems: 'center', gap: 2, marginLeft: -6 }}><Icon name="back" />Back</button>
         <div className="who" style={{ justifyContent: 'flex-start' }}><span className="av" style={{ background: `var(${roleColor(who)})` }}><Icon name={roleIcon(who)} /></span>
-          <div><h1 style={{ fontSize: 21 }}>{who.display_name}</h1><div style={{ opacity: 0.85 }}>{ROLE_LABEL[who.role]}{who.location_name ? ` · ${who.location_name}` : ''}</div></div></div>
+          <div><h1 style={{ fontSize: 24 }}>{who.display_name}</h1><div className="muted">{ROLE_LABEL[who.role]}{who.location_name ? ` · ${who.location_name}` : ''}</div></div></div>
       </div></div>
       <div className="body"><div className="body-in" style={{ maxWidth: 360 }}>
         <p className="muted" style={{ textAlign: 'center', margin: '8px 0 0' }}>Enter your PIN</p>

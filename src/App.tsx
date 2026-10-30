@@ -74,7 +74,7 @@ function Signed() {
   const timer = useRef<number>();
   const reload = useCallback(async () => {
     try {
-      const d = await loadDashboard(45);
+      const d = await loadDashboard(90);
       setD(d); setErr(''); setVersion((v) => v + 1);
       try { localStorage.setItem(CACHE, JSON.stringify(d)); } catch { /* storage full or blocked */ }
     } catch (e) { setErr((e as Error).message); }
@@ -126,14 +126,14 @@ function Shell({ D, version, err, signOut, reload }: { D: Dashboard; version: nu
     {!online && <div className="offline">Offline: showing the last figures loaded. Records can be saved again once the connection is back.</div>}
     <header className="appbar"><div className="appbar-in">
       <button className="iconbtn" onClick={() => setDrawer(true)} aria-label="Menu"><Icon name="menu" /></button>
-      <div className="ttl"><b>{title}</b><small>{D.me.display_name} · {ROLE_NAME[D.me.role]}{loc ? ` · ${loc.name}` : ''}</small></div>
+      <div className="ttl"><b>{title}</b><small>{[D.me.display_name, D.me.display_name.includes(ROLE_NAME[D.me.role]) || D.me.display_name === ROLE_NAME[D.me.role] ? '' : ROLE_NAME[D.me.role], loc?.name].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).join(' · ')}</small></div>
       <button className="iconbtn" onClick={openBell} aria-label="Alerts">{<Icon name="bell" />}{myAlerts.length + unread.length > 0 && <span className="badge">{myAlerts.length + unread.length}</span>}</button>
     </div></header>
     <div className="shell">
       <nav className="rail" aria-label="Sections"><div className="rail-loc">{loc?.name ?? 'All locations'}</div>
         {tabs.map((t) => <button key={t} aria-current={tab === t} onClick={() => go(t)}><Icon name={TABS[t].icon} />{TABS[t].label}</button>)}
         {!tabs.includes('me') && !tabs.includes('setup') && <button onClick={() => go('me')}><Icon name="user" />My account</button>}</nav>
-      <main>
+      <main key={tab}>
         {D.me.must_change_pin && <div className="banner warn"><div><b>You are using the default PIN 0000</b><p>Anyone who knows it can sign in as you. Choose your own PIN.</p></div><button className="btn yolk" onClick={() => ui.openForm(changePinForm())}>Change PIN</button></div>}
         {err && online && <div className="banner warn"><div><b>Could not refresh</b><p>{err}</p></div><button className="btn sm" onClick={reload}>Try again</button></div>}
         {(tabs.includes(tab) || tab === 'me' ? TABS[tab] : TABS[tabs[0]]).view(props)}

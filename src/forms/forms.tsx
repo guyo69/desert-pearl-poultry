@@ -194,7 +194,8 @@ export function saleForm(D: Dashboard, loc: string): FormSpec {
     ],
     calc: (v) => { const d = due(v), paid = v.cash + v.till + v.paybill, rem = d - paid; return <>
       <div><span>Amount due</span><b className="big">{kes(d)}</b></div>
-      {d > 0 && rem === 0 ? <Ok>Payments add up to {kes(paid)}</Ok> : <Bad l={rem > 0 ? 'Still to allocate' : 'Over-allocated'} r={kes(Math.abs(rem))} />}</>; },
+      {d === 0 && paid === 0 ? <div><span className="muted">Enter the eggs sold, then how the customer paid</span></div>
+        : d > 0 && rem === 0 ? <Ok>Payments add up to {kes(paid)}</Ok> : <Bad l={rem > 0 ? 'Still to allocate' : 'Over-allocated'} r={kes(Math.abs(rem))} />}</>; },
     buttons: (v, set) => <>{(['cash', 'till', 'paybill'] as const).map((m) => (
       <button key={m} type="button" className="btn sm alt" onClick={() => set({ cash: '', till: '', paybill: '', [m]: due(v) })}>All {m === 'cash' ? 'cash' : m === 'till' ? 'Till' : 'Paybill'}</button>))}</>,
     onSubmit: async (v) => {

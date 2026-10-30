@@ -3,11 +3,10 @@ import { addDays, dlabel, eggs, kes, n0, range, timeOf } from '../lib/format';
 import { alertsFor, balance, cashDay, dayLedger, salesOn, stockNow, tot } from '../lib/metrics';
 import type { Q } from '../lib/types';
 import { breakageForm, cashCountForm, countForm, dispatchForm, expenseForm, moveForm, receiveForm, saleForm } from '../forms/forms';
-import { ChartBox } from '../ui/Chart';
 import { Icon } from '../ui/icons';
 import { useUI } from '../ui/ui';
 import { AlertList, Card, Empty, Kpi, Legend, Tile } from '../ui/widgets';
-import { payChart } from './charts';
+import { PayChart } from './charts';
 import { RecordList } from './common';
 import type { ViewProps } from './Management';
 
@@ -68,8 +67,7 @@ export function PosStock(p: ViewProps) {
 export function PosSales(p: ViewProps) {
   const { D, version } = p, ui = useUI(), loc = myLoc(p);
   return <>
-    <Card title="Sales, last 14 days" aside={<span className="muted">KES by payment method</span>}><ChartBox label="Sales by payment method" config={payChart(D, 13, loc)} />
-      <Legend items={[['--l-farm', 'Cash'], ['--l-tuala', 'Till'], ['--l-van', 'Paybill']]} /></Card>
+    <Card title="Sales by payment method"><PayChart D={D} loc={loc} /></Card>
     <Card title="Recent sales" aside={<button className="lnk" onClick={() => ui.openForm(saleForm(D, loc))}>New sale</button>}>
       <RecordList D={D} version={version} loc={loc} kinds={['sale']} canVoid={false} limit={25} /></Card>
   </>;

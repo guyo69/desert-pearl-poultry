@@ -2,15 +2,14 @@
 import { useState } from 'react';
 import { rpc } from '../lib/api';
 import { addDays, daysBetween, dlabel, eggs, n0, pct, range } from '../lib/format';
-import { collected, deaths, feedInfo, hensNow, houseAge, layRate, stockNow, tankInfo, tot, waterFeedRatio, waterOn, waterTrend } from '../lib/metrics';
+import { collected, deaths, hensNow, houseAge, layRate, stockNow, tankInfo, tot, waterFeedRatio, waterOn, waterTrend } from '../lib/metrics';
 import {
   collectForm, dispatchForm, feedInForm, feedUseForm, medForm, medicineForm, mortForm, scheduleForm, tankForm, waterIntakeForm,
 } from '../forms/forms';
-import { ChartBox } from '../ui/Chart';
 import { Icon } from '../ui/icons';
 import { useUI } from '../ui/ui';
-import { Card, Delta, Empty, FeedCard, Legend, RangeSeg, Seg, TankCard, Tile } from '../ui/widgets';
-import { feedStockChart, feedUseChart, houseColor, tankChart, waterChart } from './charts';
+import { Card, Delta, Empty, FeedCard, Seg, TankCard, Tile } from '../ui/widgets';
+import { FeedStockChart, FeedUseChart, TankChart, WaterChart, houseColor } from './charts';
 import { RecordList } from './common';
 import type { ViewProps } from './Management';
 
@@ -50,20 +49,18 @@ export function ClerkHome({ D, version, go }: ViewProps) {
 }
 
 export function Feed({ D, version }: ViewProps) {
-  const ui = useUI(), [n, setN] = useState(30), f = feedInfo(D);
+  const ui = useUI();
   return <>
     <FeedCard D={D} actions={<><button className="btn sm" onClick={() => ui.openForm(feedUseForm(D))}><Icon name="scoop" />Feed used</button>
       <button className="btn sm alt" onClick={() => ui.openForm(feedInForm(D))}><Icon name="sack" />Feed received</button></>} />
-    <Card title="Feed in store" aside={<RangeSeg value={n} onChange={setN} />}>
-      <ChartBox height={280} label="Feed in store, coloured by buffer band" config={feedStockChart(D, n)} />
-      <Legend items={[['--f-full', 'Full buffer'], ['--f-good', 'Good'], ['--f-watch', 'Watch'], ['--f-low', 'Low'], ['--f-none', 'No buffer']]} /></Card>
-    <Card title="Daily use vs plan" aside={<span className="muted">kg · plan {n0(f.target / 7)} kg/day</span>}><ChartBox height={190} label="Daily feed use" config={feedUseChart(D, n)} /></Card>
+    <Card title="Feed in store" aside={<span className="muted">shaded by buffer band</span>}><FeedStockChart D={D} /></Card>
+    <Card title="Daily use vs plan"><FeedUseChart D={D} /></Card>
     <Card title="Feed records"><RecordList D={D} version={version} kinds={['feed']} canVoid={D.me.role === 'owner' || D.me.role === 'manager'} limit={20} /></Card>
   </>;
 }
 
 export function Water({ D, version }: ViewProps) {
-  const ui = useUI(), [n, setN] = useState(14), s = D.settings, y = addDays(D.today, -1);
+  const ui = useUI(), s = D.settings, y = addDays(D.today, -1);
   const ratio = waterFeedRatio(D, range(addDays(D.today, -7), y));
   const t = tankInfo(D);
   return <>
@@ -79,11 +76,10 @@ export function Water({ D, version }: ViewProps) {
         <div className="ok-line" style={{ background: 'var(--surface-2)' }}><Icon name="pulse" />Water to feed, last 7 days: {ratio ? `${ratio.toFixed(2)} L per kg` : 'not enough records'} (normal {s.water_ratio_min}–{s.water_ratio_max})</div>
       </Card>
     </div>
-    <Card title="Water drunk per day" aside={<RangeSeg value={n} onChange={setN} />}>
-      <ChartBox height={260} label="Water drunk per day by house" config={waterChart(D, n)} />
-      <Legend items={[...D.houses.map((h, i): [string, string] => [houseColor(i), h.name]), ['--fg', 'L per kg feed']]} />
+    <Card title="Water drunk per day">
+      <WaterChart D={D} />
       <p className="muted" style={{ fontSize: 13, margin: '10px 0 0' }}>Laying hens normally drink about {s.water_ratio_min}–{s.water_ratio_max} litres for every kg of feed, more in hot weather. A drop of {s.water_drop_pct}% or more below the usual level raises an alert: it often shows a blocked line or sick birds a day before egg numbers fall.</p></Card>
-    {t && D.tank_daily.length > 1 && <Card title="Tank level readings" aside={<span className="muted">last reading each day</span>}><ChartBox height={200} label="Tank level readings" config={tankChart(D)} /></Card>}
+    {t && D.tank_daily.length > 1 && <Card title="Tank level"><TankChart D={D} /></Card>}
     <Card title="Water records"><RecordList D={D} version={version} kinds={['water']} canVoid={D.me.role === 'owner' || D.me.role === 'manager'} limit={20} /></Card>
   </>;
 }

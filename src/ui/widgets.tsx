@@ -3,7 +3,6 @@ import { BANDS, band, feedInfo, locColor, tankInfo, type Alert, type Band } from
 import { dshort, n0, pct, timeOf } from '../lib/format';
 import type { Dashboard, Sev } from '../lib/types';
 import { Icon } from './icons';
-import { cssv } from './Chart';
 
 export const sevVar = (s: Sev | 'ok') => `var(${s === 'red' ? '--f-none' : s === 'orange' ? '--f-low' : s === 'amber' ? '--f-watch' : s === 'ok' ? '--f-full' : '--info'})`;
 export const sevClass = (s: Sev | 'ok') => `sev-${s}`;
@@ -16,7 +15,7 @@ export function Card({ title, aside, children, style }: { title?: ReactNode; asi
 }
 export const LocDot = ({ id }: { id: string }) => <span className="locdot" style={{ background: `var(${locColor(id)})` }} />;
 export function Legend({ items }: { items: [string, string][] }) {
-  return <div className="legend">{items.map(([c, l]) => <span key={l}><i style={{ background: c.startsWith('--') ? cssv(c) : c }} />{l}</span>)}</div>;
+  return <div className="legend">{items.map(([c, l]) => <span key={l}><i style={{ background: c.startsWith('--') ? `var(${c})` : c }} />{l}</span>)}</div>;
 }
 export function Tile({ icon, label, color, onClick }: { icon: string; label: string; color: string; onClick: () => void }) {
   return <button className="tile" onClick={onClick}><span className="ic" style={{ background: `var(${color})` }}><Icon name={icon} /></span>{label}</button>;
@@ -50,7 +49,7 @@ function Gauge({ level, b, label }: { level: number; b: Band; label: string }) {
   return (
     <div className="gauge" role="img" aria-label={`${label} ${pct(level, 0)}, ${b.label}`}>
       <div className="bands">{order.map((k) => <i key={k} className={BANDS[k] === b ? 'on' : ''} style={{ background: `var(${BANDS[k].color})` }} />)}</div>
-      <div className="mark" style={{ left: `${pos}%` }} />
+      <div className="mark" style={{ left: `${pos}%`, borderColor: `var(${b.color})` }} />
       <div className="scale"><span>No buffer &lt;25%</span><span>Low 25–49</span><span>Watch 50–74</span><span>Good 75–99</span><span>Full 100%+</span></div>
     </div>
   );
@@ -100,4 +99,16 @@ export function TankCard({ D, actions }: { D: Dashboard; actions?: ReactNode }) 
       {actions && <div className="row-btns" style={{ marginTop: 14 }}>{actions}</div>}
     </section>
   );
+}
+
+/** Horizontal comparison bars (categories), with an optional faint "previous" bar. */
+export function BarList({ rows, format }: { rows: { key: string; label: React.ReactNode; value: number; prev?: number; color: string; note?: React.ReactNode }[]; format: (v: number) => string }) {
+  const max = Math.max(1e-9, ...rows.map((r) => Math.max(r.value, r.prev ?? 0)));
+  return <div className="barlist">{rows.map((r) => (
+    <div className="br" key={r.key}>
+      <div className="br-h"><span>{r.label}</span><b>{format(r.value)}</b></div>
+      <div className="br-track"><span style={{ width: `${(r.value / max) * 100}%`, background: r.color.startsWith('--') ? `var(${r.color})` : r.color }} /></div>
+      {r.prev != null && <div className="br-track prev"><span style={{ width: `${(r.prev / max) * 100}%` }} /></div>}
+      {r.note && <div className="br-note">{r.note}</div>}
+    </div>))}</div>;
 }

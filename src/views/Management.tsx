@@ -1,5 +1,4 @@
 // Owner and Farm Manager screens: overview, alerts, stock, money, report.
-import { useState } from 'react';
 import { addDays, dlabel, dnum, dshort, eggs, kes, kesS, n0, pct, range } from '../lib/format';
 import {
   alertsFor, balance, collected, dayLedger, feedInfo, hensNow, intelligence, layRate, outletLoss, salesOn, stockNow, tankInfo, tot,
@@ -7,17 +6,15 @@ import {
 } from '../lib/metrics';
 import type { Dashboard } from '../lib/types';
 import { feedInForm, moveForm, receiveForm, tankForm, expenseForm } from '../forms/forms';
-import { ChartBox } from '../ui/Chart';
 import { Icon } from '../ui/icons';
 import { useUI } from '../ui/ui';
-import { AlertList, Card, Delta, Empty, FeedCard, Kpi, Legend, LocDot, RangeSeg, TankCard, sevClass, sevVar } from '../ui/widgets';
-import { breakageChart, houseColor, houseLayChart, outletWeekChart, payChart, productionChart, salesChart, waterChart } from './charts';
+import { AlertList, BarList, Card, Delta, Empty, FeedCard, Kpi, LocDot, TankCard, sevClass, sevVar } from '../ui/widgets';
+import { HouseLayChart, PayChart, ProductionChart, SalesChart, WaterChart, houseColor } from './charts';
 import { NoticeList } from './common';
 
 export interface ViewProps { D: Dashboard; version: number; go: (tab: string) => void }
 
 export function Overview({ D, go }: ViewProps) {
-  const [n, setN] = useState(14);
   const ui = useUI();
   const y = addDays(D.today, -1), w1 = range(addDays(D.today, -7), y), w0 = range(addDays(D.today, -14), addDays(D.today, -8));
   const cT = tot(collected(D, [D.today])), cY = tot(collected(D, [y]));
@@ -25,7 +22,7 @@ export function Overview({ D, go }: ViewProps) {
   const wY = waterOn(D, [y]), wPrev = waterOn(D, range(addDays(y, -7), addDays(y, -1))) / 7;
   const A = alertsFor(D);
   return <>
-    <div className="sample"><div><h2>{dlabel(D.today)}</h2><div className="muted">{D.me.role === 'owner' ? 'All five sales points' : 'Central Farm and sales points'} · {hensNow(D)} hens</div></div><RangeSeg value={n} onChange={setN} /></div>
+    <div className="sample"><div><h2>{dlabel(D.today)}</h2><div className="muted">{D.me.role === 'owner' ? 'All five sales points' : 'Central Farm and sales points'} · {hensNow(D)} hens</div></div></div>
     <div className="kpis">
       <Kpi label="Eggs collected today" value={eggs(cT)} sub={`Yesterday ${eggs(cY)}`} />
       <Kpi label="Lay rate · 7 days" value={pct(layRate(D, w1))} sub={<><Delta a={layRate(D, w1)} b={layRate(D, w0)} pts /> vs week before</>} />
@@ -38,18 +35,9 @@ export function Overview({ D, go }: ViewProps) {
       <TankCard D={D} actions={<button className="btn sm alt" onClick={() => ui.openForm(tankForm(D))}><Icon name="tank" />Tank level</button>} />
     </div>
     <Card title="Needs attention" aside={<button className="lnk" onClick={() => go('alerts')}>See all {A.length}</button>}><AlertList list={A} limit={4} /></Card>
-    <Card title="Egg production by house" aside={<span className="muted">trays per day · lay rate</span>}>
-      <ChartBox height={280} label="Egg production by house" config={productionChart(D, n)} />
-      <Legend items={[...D.houses.map((h, i): [string, string] => [houseColor(i), h.name]), ['--fg', 'Lay rate %']]} />
-    </Card>
-    <Card title="Water drunk by house" aside={<span className="muted">litres per day · litres per kg of feed</span>}>
-      <ChartBox label="Water drunk by house" config={waterChart(D, n)} />
-      <Legend items={[...D.houses.map((h, i): [string, string] => [houseColor(i), h.name]), ['--fg', 'L per kg feed']]} />
-    </Card>
-    <Card title="Sales by location" aside={<span className="muted">KES per day</span>}>
-      <ChartBox label="Sales by location" config={salesChart(D, n)} />
-      <Legend items={D.locations.map((l): [string, string] => [`--l-${l.id.toLowerCase()}`, l.short])} />
-    </Card>
+    <Card title="Egg production"><ProductionChart D={D} /></Card>
+    <Card title="Water drunk"><WaterChart D={D} /></Card>
+    <Card title="Sales"><SalesChart D={D} /></Card>
     <Card title="Sales points right now" aside={<button className="lnk" onClick={() => go('stock')}>Stock detail</button>}>
       <div className="locs">{D.locations.map((l) => {
         const st = stockNow(D, l.id), s = salesOn(D, [D.today], l.id), it = D.transit.filter((x) => x.to_loc === l.id);
@@ -106,16 +94,14 @@ export function Stock({ D }: ViewProps) {
         <div className="mid"><b>{D.locations.find((l) => l.id === x.from_loc)?.short} → {D.locations.find((l) => l.id === x.to_loc)?.short}</b><small>Sent {dlabel(x.d)}</small></div>
         <div className="end">{eggs(x.sent_n + x.sent_c + x.sent_j)}<div><button className="act" onClick={() => ui.openForm(receiveForm(D, x))}>Receive</button></div></div></div>)}</div> : <Empty>Nothing in transit.</Empty>}</Card>
       <Card title="Breakage, last 7 days" aside={<span className="muted">transit + handling</span>}>
-        <ChartBox height={190} label="Breakage rate by location" config={breakageChart(D, loss)} />
-        <div className="tblw" style={{ marginTop: 8 }}><table><thead><tr><th>Location</th><th>Lost</th><th>Of</th><th>Rate</th></tr></thead>
-          <tbody>{loss.map((o) => <tr key={o.loc}><td><LocDot id={o.loc} />{D.locations.find((l) => l.id === o.loc)?.short}</td><td>{o.loss} pc</td><td>{eggs(o.base)}</td>
-            <td><span className={`chip ${o.rate * 100 > D.settings.break_tol ? 'sev-amber' : 'sev-ok'}`}>{pct(o.rate)}</span></td></tr>)}</tbody></table></div></Card>
+        <BarList format={(v) => pct(v)} rows={loss.map((o) => ({ key: o.loc, label: <><LocDot id={o.loc} />{D.locations.find((l) => l.id === o.loc)?.short}</>, value: o.rate,
+          color: o.rate * 100 > D.settings.break_tol ? '--f-low' : '--f-full', note: `${o.loss} pc lost of ${eggs(o.base)}` }))} /></Card>
     </div>
   </>;
 }
 
 export function Money({ D }: ViewProps) {
-  const ui = useUI(), [n, setN] = useState(14);
+  const ui = useUI();
   const cash = D.accounts.filter((a) => a.kind === 'cash');
   const sumK = (k: string) => D.money_daily.filter((r) => r.kind === k).reduce((a, r) => a + Number(r.amount), 0);
   const total = totalFunds(D), inWindow = D.money_daily.reduce((a, r) => a + Number(r.amount), 0), start = total - inWindow;
@@ -149,10 +135,7 @@ export function Money({ D }: ViewProps) {
         </div>
         <div className={`ok-line ${ok ? 'sev-ok' : 'sev-red'}`}><Icon name={ok ? 'check' : 'alert'} />{ok ? 'Balanced. Moving money between accounts nets to zero.' : `Out of balance by ${kes(total - expected)}`}</div>
       </Card>
-      <Card title="Receipts by payment method" aside={<RangeSeg value={n} onChange={setN} />}>
-        <ChartBox label="Receipts by payment method" config={payChart(D, n)} />
-        <Legend items={[['--l-farm', 'Cash'], ['--l-tuala', 'Till'], ['--l-van', 'Paybill']]} />
-      </Card>
+      <Card title="Receipts by payment method"><PayChart D={D} /></Card>
     </div>
     <Card title="Today by sales point" aside={<span className="muted">sales must equal cash + Till + Paybill</span>}><div className="tblw"><table>
       <thead><tr><th>Location</th><th>Sales</th><th>Cash</th><th>Till</th><th>Paybill</th><th>Check</th><th>Expected cash</th><th>Last count</th></tr></thead>
@@ -190,10 +173,10 @@ export function Report({ D }: ViewProps) {
       <tbody>{rows.map((r) => <tr key={r[0]}><td>{r[0]}</td><td><b>{r[1]}</b></td><td>{r[2]}</td><td>{r[5] === null ? <span className="muted">–</span> : <Delta a={r[3]} b={r[4]} invert={r[5]} pts={r[6]} />}</td></tr>)}</tbody></table></div></Card>
     <Card title="Findings">{I.findings.map((f, i) => <div className="finding" key={i}><span style={{ width: 4, borderRadius: 2, background: sevVar(f.sev), gridRow: 'span 2' }} /><b>{f.title}</b><p>{f.text}</p></div>)}</Card>
     <div className="grid2">
-      <Card title="Lay rate by house" aside={<span className="muted">30 days vs expected (dashed)</span>}><ChartBox label="Lay rate by house" config={houseLayChart(D)} />
-        <Legend items={D.houses.map((h, i): [string, string] => [houseColor(i), h.name])} /></Card>
-      <Card title="Sales by location" aside={<span className="muted">week on week</span>}><ChartBox label="Sales by location week on week" config={outletWeekChart(D, I.outlets)} />
-        <Legend items={[['--l-farm', 'Last 7 days'], ['--line', 'Week before']]} /></Card>
+      <Card title="Lay rate by house" aside={<span className="muted">dashed: expected</span>}><HouseLayChart D={D} /></Card>
+      <Card title="Sales by location" aside={<span className="muted">last 7 days · faint bar: week before</span>}>
+        <BarList format={kes} rows={I.outlets.slice().sort((p, q) => q.sales.value - p.sales.value).map((o) => ({ key: o.loc, label: <><LocDot id={o.loc} />{D.locations.find((l) => l.id === o.loc)?.short}</>,
+          value: o.sales.value, prev: o.prev, color: `--l-${o.loc.toLowerCase()}`, note: o.prev ? `${o.chg >= 0 ? '▲' : '▼'} ${Math.abs(o.chg * 100).toFixed(1)}% on the week before` : undefined }))} /></Card>
     </div>
     <Card title="Sales point league"><div className="tblw"><table>
       <thead><tr><th>Location</th><th>Sales</th><th>Change</th><th>Share</th><th>Eggs sold</th><th>Breakage</th></tr></thead>

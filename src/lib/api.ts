@@ -33,7 +33,7 @@ export async function callFn<T = any>(name: string, body?: Record<string, unknow
   return data as T;
 }
 
-export const loadDashboard = (days = 45) => rpc<Dashboard>('dashboard', { p_days: days });
+export const loadDashboard = (days = 90) => rpc<Dashboard>('dashboard', { p_days: days });
 export const loadActivity = (p: { limit?: number; before?: string | null; loc?: string | null; kind?: string | null }) =>
   rpc<ActivityRow[]>('activity', { p_limit: p.limit ?? 60, p_before: p.before ?? null, p_loc: p.loc ?? null, p_kind: p.kind ?? null });
 
