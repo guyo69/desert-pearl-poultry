@@ -75,13 +75,13 @@ do $$ declare c uuid := '00000000-0000-0000-0000-000000000003'; s uuid := t_sess
   update staff set active = true where id = c;
 end $$;
 
--- manager: password ok but no 2FA yet -> must enrol; enrolled -> must verify in this session
+-- manager: two-step is optional; once turned on, every new session must pass it
 do $$ declare m uuid := '00000000-0000-0000-0000-000000000002'; s uuid := t_sess(m); s2 uuid := t_sess(m); s3 uuid := t_sess(m); begin
   assert _session_state(m, s) = 'mfa_verify', 'manager new session needs code';
   insert into mfa_sessions (session_id, staff_id) values (s, m);
   assert _session_state(m, s) = 'ready', 'manager verified';
   update mfa_factors set confirmed_at = null where staff_id = m;
-  assert _session_state(m, s2) = 'mfa_enroll', 'manager without factor must enrol';
+  assert _session_state(m, s2) = 'ready', 'two-step is optional: manager without a factor is fully signed in';
   update mfa_factors set confirmed_at = now() where staff_id = m;
   -- MFA comes before the temporary-password step, so a reset password alone is not enough
   update staff set must_change_password = true, temp_expires_at = now() + interval '1 hour' where id = m;
@@ -118,7 +118,7 @@ end $$;
 select t_err($$select security_log()$$, 'not available');
 select t_as('00000000-0000-0000-0000-000000000001');   -- owner, verified
 do $$ declare d jsonb := dashboard(10); begin
-  assert (d->'me'->>'mfa_required')::boolean, 'owner 2FA required';
+  assert not (d->'me'->>'mfa_required')::boolean, 'owner 2FA optional';
   assert d->'staff'->0->>'username' is not null, 'owner sees usernames';
 end $$;
 reset role;

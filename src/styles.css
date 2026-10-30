@@ -428,3 +428,7 @@ tfoot td{font-weight:700;border-top:.5px solid var(--line-strong);border-bottom:
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
 }
+.medgroup+.medgroup{margin-top:10px}
+.medgroup h4{margin:4px 0 2px;font-size:12.5px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+.calc .dest{margin-top:4px}
+.calc .dest b{font-size:15px}

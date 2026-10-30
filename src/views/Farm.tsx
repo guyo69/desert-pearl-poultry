@@ -95,12 +95,7 @@ export function Health({ D }: ViewProps) {
         return <tr key={h.id}><td>{h.name}</td><td>{n0(hens)}</td><td>{houseAge(D, h)} wks</td>
           <td><span className={`chip ${lay < h.expected_lay - 0.04 ? 'sev-orange' : 'sev-ok'}`}>{pct(lay)}</span></td><td>{pct(h.expected_lay, 0)}</td>
           <td>{Number.isFinite(wpb) && wpb > 0 ? `${n0(wpb)} ml` : '–'}</td><td>{deaths(D, M, h.id)}</td></tr>; })}</tbody></table></div></Card>
-    <Card title="Medicine & vaccine store" aside={<div className="row-btns"><button className="lnk" onClick={() => ui.openForm(medForm(D))}>Record use or delivery</button>{mgmt && <button className="lnk" onClick={() => ui.openForm(medicineForm())}>Add item</button>}</div>}>
-      {D.medicines.length ? <div className="list">{D.medicines.filter((m) => m.active).map((m) => { const low = m.stock <= m.reorder, lvl = Math.min(1, m.stock / Math.max(1, m.reorder * 2.5));
-        return <div className="li" key={m.id}><span className="av" style={{ background: `var(${low ? '--f-low' : '--info'})` }}><Icon name="syringe" /></span>
-          <div className="mid"><b>{m.name}</b><div className="splitbar" style={{ margin: '6px 0 2px', height: 6 }}><span style={{ width: `${lvl * 100}%`, background: `var(${low ? '--f-low' : '--f-full'})` }} /></div><small>Reorder at {n0(m.reorder)} {m.unit}</small></div>
-          <div className="end">{n0(m.stock)} {m.unit}{low && <small style={{ color: 'var(--f-low)' }}>Low</small>}{mgmt && <div><button className="act" onClick={() => ui.openForm(medicineForm(m))}>Edit</button></div>}</div></div>; })}</div>
-        : <Empty>No medicines set up yet.</Empty>}</Card>
+    <MedicineStore D={D} mgmt={mgmt} />
     <Card title="Vaccination & treatment schedule" aside={mgmt ? <button className="lnk" onClick={() => ui.openForm(scheduleForm(D))}>Add task</button> : undefined}>
       {D.schedule.length ? <div>{D.schedule.map((e) => { const n = daysBetween(D.today, e.due);
         return <div className="check" key={e.id}><button className={`tick ${e.done ? 'ok' : ''}`} style={{ border: 0, cursor: 'pointer' }} aria-label={e.done ? 'Mark not done' : 'Mark done'} onClick={() => done(e.id, !e.done)}>{e.done && <Icon name="check" />}</button>
@@ -116,4 +111,27 @@ export function Records({ D, version }: ViewProps) {
   return <Card title="Farm records" aside={<Seg value={k} options={REC_KINDS} onChange={setK} />}>
     <RecordList D={D} version={version} loc={k === 'all' || k === 'xfer' ? 'FARM' : null} kinds={k === 'all' ? ['collect', 'feed', 'water', 'med', 'mort', 'xfer'] : [k]}
       canVoid={D.me.role === 'owner' || D.me.role === 'manager'} limit={k === 'all' ? 60 : 30} /></Card>;
+}
+
+function MedicineStore({ D, mgmt }: { D: ViewProps['D']; mgmt: boolean }) {
+  const ui = useUI();
+  const [showOld, setShowOld] = useState(false);
+  const list = D.medicines.filter((m) => m.active || showOld);
+  const retired = D.medicines.filter((m) => !m.active).length;
+  const groups = [...new Set(list.map((m) => m.category))].sort((a, b) => a.localeCompare(b));
+  return <Card title="Medicine & vaccine store" aside={<div className="row-btns">
+      <button className="lnk" onClick={() => ui.openForm(medForm(D))}>Record use or delivery</button>
+      <button className="lnk" onClick={() => ui.openForm(medForm(D, { startNew: true }))}>New item received</button>
+      {mgmt && <button className="lnk" onClick={() => ui.openForm(medicineForm(D))}>Add item</button>}</div>}>
+    {list.length ? groups.map((g) => <div key={g} className="medgroup">
+      <h4>{g}</h4>
+      <div className="list">{list.filter((m) => m.category === g).sort((a, b) => a.name.localeCompare(b.name)).map((m) => {
+        const low = m.active && m.stock <= m.reorder, lvl = Math.min(1, m.stock / Math.max(1, m.reorder * 2.5));
+        return <div className={`li${m.active ? '' : ' void'}`} key={m.id}><span className="av" style={{ background: `var(${!m.active ? '--muted' : low ? '--f-low' : '--info'})` }}><Icon name="syringe" /></span>
+          <div className="mid"><b>{m.name}</b>{m.active && <div className="splitbar" style={{ margin: '6px 0 2px', height: 6 }}><span style={{ width: `${lvl * 100}%`, background: `var(${low ? '--f-low' : '--f-full'})` }} /></div>}
+            <small>{m.active ? `Reorder at ${n0(m.reorder)} ${m.unit}` : 'Not in use'}</small></div>
+          <div className="end">{n0(m.stock)} {m.unit}{low && <small style={{ color: 'var(--f-low)' }}>Low</small>}{mgmt && <div><button className="act" onClick={() => ui.openForm(medicineForm(D, m))}>Edit</button></div>}</div></div>; })}</div>
+    </div>) : <Empty>No medicines yet. Use "New item received" when the first delivery arrives.</Empty>}
+    {mgmt && retired > 0 && <button className="lnk" style={{ marginTop: 8 }} onClick={() => setShowOld(!showOld)}>{showOld ? 'Hide items not in use' : `Show ${retired} item${retired === 1 ? '' : 's'} not in use`}</button>}
+  </Card>;
 }

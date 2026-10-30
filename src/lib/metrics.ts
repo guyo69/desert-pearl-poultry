@@ -66,7 +66,7 @@ export function salesOn(D: Dashboard, days: string[], loc?: string) {
 }
 export function priceOf(D: Dashboard, q: Q) {
   const s = D.settings;
-  return Math.round(Math.floor(q.n / 30) * s.tray_n + (q.n % 30) * s.pc_n + q.c * s.tray_c / 30 + q.j * s.pc_j);
+  return Math.round(Math.floor(q.n / 30) * s.tray_n + (q.n % 30) * s.pc_n + Math.floor(q.c / 30) * s.tray_c + (q.c % 30) * (s.pc_c ?? s.tray_c / 30) + q.j * s.pc_j);
 }
 
 /* ---------------- feed ---------------- */

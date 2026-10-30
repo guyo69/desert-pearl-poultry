@@ -10,6 +10,8 @@ export type Field =
   | { type: 'text'; id: string; label: string; placeholder?: string; def?: string }
   | { type: 'date'; id: string; label: string; def?: string }
   | { type: 'pair'; fields: Field[] }
+  /** Fields shown only while show(values) is true (e.g. "new item" details). */
+  | { type: 'group'; show: (v: V) => boolean; fields: Field[] }
   | { type: 'note'; text: ReactNode };
 
 export interface FormSpec {
@@ -34,7 +36,7 @@ export const useUI = () => useContext(Ctx);
 
 function initial(fields: Field[], v: V = {}): V {
   for (const f of fields) {
-    if (f.type === 'pair') initial(f.fields, v);
+    if (f.type === 'pair' || f.type === 'group') initial(f.fields, v);
     else if (f.type === 'eggs' || f.type === 'num') v[f.id] = f.def ?? '';
     else if (f.type === 'select') v[f.id] = f.def ?? f.options[0]?.[0] ?? '';
     else if (f.type === 'text' || f.type === 'date') v[f.id] = f.def ?? '';
@@ -45,7 +47,7 @@ function initial(fields: Field[], v: V = {}): V {
 export function values(fields: Field[], raw: V): V {
   const out: V = { ...raw };
   const walk = (fs: Field[]) => fs.forEach((f) => {
-    if (f.type === 'pair') walk(f.fields);
+    if (f.type === 'pair' || f.type === 'group') walk(f.fields);
     else if (f.type === 'num' || f.type === 'eggs') out[f.id] = raw[f.id] === '' || raw[f.id] == null ? 0 : Number(raw[f.id]);
   });
   walk(fields);
@@ -70,6 +72,7 @@ function EggsInput({ f, v, set }: { f: Extract<Field, { type: 'eggs' }>; v: V; s
 
 function FieldView({ f, v, set }: { f: Field; v: V; set: (p: V) => void }) {
   switch (f.type) {
+    case 'group': return f.show(v) ? <>{f.fields.map((x, i) => <FieldView key={i} f={x} v={v} set={set} />)}</> : null;
     case 'pair': return <div className="pair">{f.fields.map((x, i) => <FieldView key={i} f={x} v={v} set={set} />)}</div>;
     case 'note': return <div className="calc">{f.text}</div>;
     case 'eggs': return <EggsInput f={f} v={v} set={set} />;

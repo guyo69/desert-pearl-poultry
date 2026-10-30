@@ -98,21 +98,65 @@ export function tankForm(D: Dashboard): FormSpec {
   };
 }
 
-export const medForm = (D: Dashboard): FormSpec => ({
-  title: 'Medicine & vaccines',
-  fields: [
-    { type: 'select', id: 'med', label: 'Item', options: D.medicines.filter((m) => m.active).map((m): [string, string] => [String(m.id), `${m.name} (${n0(m.stock)} ${m.unit})`]) },
-    { type: 'select', id: 'kind', label: 'Movement', options: [['use', 'Used / given to birds'], ['in', 'Received into store']] },
-    { type: 'num', id: 'qty', label: 'Quantity' },
-    { type: 'select', id: 'house', label: 'House', options: houseNameOpts(D) },
-    { type: 'text', id: 'note', label: 'Note', placeholder: 'e.g. booster dose, vet name' },
-  ],
-  onSubmit: async (v) => {
-    const r = await rpc<{ stock: number; low: boolean }>('rpc_med', { p_medicine: Number(v.med), p_kind: v.kind, p_qty: v.qty, p_house: v.house, p_note: v.note || null });
-    const m = D.medicines.find((x) => String(x.id) === v.med)!;
-    return `${m.name}: ${n0(r.stock)} ${m.unit} left${r.low ? ', below reorder level' : ''}.`;
-  },
-});
+/** Categories offered for medicines; any category already in use is offered too, and a new one can be typed. */
+export const MED_CATEGORIES = ['Vaccine', 'Antibiotic', 'Vitamin / supplement', 'Dewormer', 'Coccidiostat', 'Disinfectant', 'Other'];
+const NEW = '__new';
+function categoryOpts(D: Dashboard): [string, string][] {
+  const extra = [...new Set(D.medicines.map((m) => m.category))].filter((c) => !MED_CATEGORIES.includes(c)).sort();
+  return [...MED_CATEGORIES, ...extra].map((c): [string, string] => [c, c]).concat([[NEW, '+ New category…']]);
+}
+const categoryFields = (D: Dashboard, def?: string): Field[] => [
+  { type: 'select', id: 'cat', label: 'Category', options: categoryOpts(D), def: def ?? 'Vaccine' },
+  { type: 'group', show: (v) => v.cat === NEW, fields: [{ type: 'text', id: 'newcat', label: 'New category', placeholder: 'e.g. Coccidiostat, Probiotic' }] },
+];
+const chosenCategory = (v: V) => {
+  const c = v.cat === NEW ? String(v.newcat ?? '').trim() : String(v.cat ?? '');
+  if (!c) throw new Error('Type the name of the new category.');
+  return c;
+};
+
+export function medForm(D: Dashboard, opts: { startNew?: boolean } = {}): FormSpec {
+  const active = D.medicines.filter((m) => m.active)
+    .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+  const isNew = (v: V) => v.med === NEW;
+  return {
+    title: 'Medicine & vaccines',
+    fields: [
+      { type: 'select', id: 'med', label: 'Item',
+        options: [...active.map((m): [string, string] => [String(m.id), `${m.category} · ${m.name} (${n0(m.stock)} ${m.unit})`]),
+                  [NEW, '+ New item: first delivery of something not listed']],
+        def: opts.startNew || !active.length ? NEW : String(active[0].id) },
+      { type: 'group', show: (v) => !isNew(v), fields: [
+        { type: 'select', id: 'kind', label: 'Movement', options: [['use', 'Used / given to birds'], ['in', 'Received into store']] },
+        { type: 'num', id: 'qty', label: 'Quantity' },
+        { type: 'group', show: (v) => v.kind === 'use', fields: [{ type: 'select', id: 'house', label: 'House', options: houseNameOpts(D) }] },
+      ] },
+      { type: 'group', show: isNew, fields: [
+        { type: 'note', text: <div><span>Adds it to the medicine store with this delivery. The owner and farm manager are told.</span></div> },
+        { type: 'text', id: 'name', label: 'Name', placeholder: 'e.g. Gumboro vaccine (IBD)' },
+        ...categoryFields(D),
+        { type: 'pair', fields: [{ type: 'text', id: 'unit', label: 'Counted in', placeholder: 'doses, ml, g, sachets' }, { type: 'num', id: 'nqty', label: 'Quantity received' }] },
+        { type: 'num', id: 'reorder', label: 'Warn when stock falls to', hint: 'Optional. The store shows it as low at this level.' },
+      ] },
+      { type: 'text', id: 'note', label: 'Note', placeholder: 'e.g. booster dose, supplier, vet name' },
+    ],
+    onSubmit: async (v) => {
+      if (isNew(v)) {
+        if (!String(v.name ?? '').trim()) throw new Error('Enter the name of the medicine or vaccine.');
+        const category = chosenCategory(v);
+        if (!String(v.unit ?? '').trim()) throw new Error('Enter what it is counted in, e.g. doses, ml, g or sachets.');
+        if (!(v.nqty > 0)) throw new Error('Enter the quantity received.');
+        const r = await rpc<{ name: string; unit: string; stock: number; created: boolean }>('rpc_med_new',
+          { p_name: v.name, p_category: category, p_unit: v.unit, p_qty: v.nqty, p_reorder: v.reorder || 0, p_note: v.note || null });
+        return r.created ? `${r.name} added to the store with ${n0(r.stock)} ${r.unit}.` : `${r.name} was already listed. ${n0(r.stock)} ${r.unit} in store now.`;
+      }
+      if (!(v.qty > 0)) throw new Error('Enter the quantity.');
+      const r = await rpc<{ stock: number; low: boolean }>('rpc_med', { p_medicine: Number(v.med), p_kind: v.kind, p_qty: v.qty, p_house: v.kind === 'use' ? v.house : null, p_note: v.note || null });
+      const m = D.medicines.find((x) => String(x.id) === v.med)!;
+      return `${m.name}: ${n0(r.stock)} ${m.unit} left${r.low ? ', below reorder level' : ''}.`;
+    },
+  };
+}
 
 export const mortForm = (D: Dashboard): FormSpec => ({
   title: 'Mortality',
@@ -127,18 +171,40 @@ export const mortForm = (D: Dashboard): FormSpec => ({
 /* ---------------- stock movement ---------------- */
 export function dispatchForm(D: Dashboard, from: string): FormSpec {
   const st = stockNow(D, from);
+  const dests = D.locations.filter((l) => l.id !== from);
+  const lines = (v: V) => dests.map((l) => ({ to: l.id, name: l.name, n: v[`n_${l.id}`] || 0, c: v[`c_${l.id}`] || 0, j: v[`j_${l.id}`] || 0 }))
+    .filter((x) => x.n + x.c + x.j > 0);
+  const fields: Field[] = [
+    { type: 'note', text: <div><span>In stock at {locName(D, from)}</span><b>{eggs(st.n)} normal · {st.c} cracked · {st.j} jumbo</b></div> },
+  ];
+  for (const l of dests) {
+    fields.push(
+      { type: 'note', text: <div className="dest"><b>To {l.name}</b></div> },
+      { type: 'eggs', id: `n_${l.id}`, label: 'Normal eggs' },
+      { type: 'pair', fields: [{ type: 'num', id: `c_${l.id}`, label: 'Cracked', suffix: 'pc' }, { type: 'num', id: `j_${l.id}`, label: 'Jumbo / double yolk', suffix: 'pc' }] },
+    );
+  }
   return {
     title: 'Send eggs',
-    fields: [
-      { type: 'select', id: 'to', label: 'Send to', options: D.locations.filter((l) => l.id !== from).map((l): [string, string] => [l.id, l.name]) },
-      { type: 'eggs', id: 'n', label: 'Normal eggs', hint: `In stock: ${eggs(st.n)}` },
-      { type: 'pair', fields: [{ type: 'num', id: 'c', label: 'Cracked', suffix: 'pc' }, { type: 'num', id: 'j', label: 'Jumbo', suffix: 'pc' }] },
-      { type: 'note', text: <div><span>Cracked in stock {st.c} · jumbo {st.j}</span></div> },
-    ],
+    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Fill in only the outlets you are sending to. Everything is sent together, and each outlet confirms its count on arrival.</p>,
+    fields,
     submit: 'Send',
+    calc: (v) => {
+      const L = lines(v), tn = L.reduce((a, x) => a + x.n, 0), tc = L.reduce((a, x) => a + x.c, 0), tj = L.reduce((a, x) => a + x.j, 0);
+      if (!L.length) return <div><span className="muted">Enter the eggs for at least one outlet</span></div>;
+      return <>
+        {L.map((x) => <Row key={x.to} l={x.name} r={`${eggs(x.n)}${x.c ? ` · ${x.c} cracked` : ''}${x.j ? ` · ${x.j} jumbo` : ''}`} />)}
+        {tn > st.n ? <Bad l="Normal eggs: more than in stock" r={eggs(tn - st.n)} /> : <Row l="Normal left after" r={eggs(st.n - tn)} />}
+        {tc > st.c && <Bad l="Cracked: more than in stock" r={`${tc - st.c} pc`} />}
+        {tj > st.j && <Bad l="Jumbo: more than in stock" r={`${tj - st.j} pc`} />}
+      </>;
+    },
     onSubmit: async (v) => {
-      await rpc('rpc_dispatch', { p_from: from, p_to: v.to, p_n: v.n, p_c: v.c, p_j: v.j });
-      return `${eggs(v.n + v.c + v.j)} on the way to ${locName(D, v.to)}. They confirm the count on arrival.`;
+      const L = lines(v);
+      if (!L.length) throw new Error('Enter the eggs for at least one outlet.');
+      await rpc('rpc_dispatch_many', { p_from: from, p_items: L.map(({ to, n, c, j }) => ({ to, n, c, j })) });
+      return L.length === 1 ? `${eggs(L[0].n + L[0].c + L[0].j)} on the way to ${L[0].name}. They confirm the count on arrival.`
+        : `Sent to ${L.length} outlets: ${L.map((x) => x.name).join(', ')}. Each confirms its count on arrival.`;
     },
   };
 }
@@ -187,7 +253,7 @@ export function saleForm(D: Dashboard, loc: string): FormSpec {
     fields: [
       { type: 'eggs', id: 'n', label: 'Normal eggs', hint: `On the shelf: ${eggs(st.n)} · ${n0(s.tray_n)} per tray, ${s.pc_n} per loose egg` },
       { type: 'pair', fields: [{ type: 'num', id: 'c', label: 'Cracked', suffix: 'pc' }, { type: 'num', id: 'j', label: 'Jumbo', suffix: 'pc' }] },
-      { type: 'note', text: <div><span>Cracked {st.c} · jumbo {st.j} on the shelf. Cracked {n0(s.tray_c)}/tray, jumbo {s.pc_j} each.</span></div> },
+      { type: 'note', text: <div><span>Cracked {st.c} · jumbo {st.j} on the shelf. Cracked {n0(s.tray_c)}/tray or {s.pc_c} each, jumbo {s.pc_j} each.</span></div> },
       { type: 'pair', fields: [{ type: 'num', id: 'cash', label: 'Cash', suffix: 'KES' }, { type: 'num', id: 'till', label: 'M-Pesa Till', suffix: 'KES' }] },
       { type: 'num', id: 'paybill', label: 'M-Pesa Paybill', suffix: 'KES' },
       { type: 'text', id: 'customer', label: 'Customer (optional)', placeholder: 'e.g. hotel or regular buyer' },
@@ -316,14 +382,19 @@ export const houseForm = (D: Dashboard, h?: House): FormSpec => ({
   },
 });
 
-export const medicineForm = (m?: Medicine): FormSpec => ({
+export const medicineForm = (D: Dashboard, m?: Medicine): FormSpec => ({
   title: m ? `Edit ${m.name}` : 'Add a medicine or vaccine',
+  intro: m ? <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Changes apply to past records too. Set it to "Not in use" to take it off the lists; its history is kept.</p> : undefined,
   fields: [
     { type: 'text', id: 'name', label: 'Name', def: m?.name ?? '' },
-    { type: 'pair', fields: [{ type: 'text', id: 'unit', label: 'Unit', def: m?.unit ?? '', placeholder: 'doses, g, ml, sachets' }, { type: 'num', id: 'reorder', label: 'Reorder at', def: m?.reorder ?? '' }] },
-    { type: 'select', id: 'active', label: 'Status', options: [['true', 'In use'], ['false', 'Not in use']], def: String(m?.active ?? true) },
+    ...categoryFields(D, m?.category),
+    { type: 'pair', fields: [{ type: 'text', id: 'unit', label: 'Counted in', def: m?.unit ?? '', placeholder: 'doses, g, ml, sachets' }, { type: 'num', id: 'reorder', label: 'Reorder at', def: m?.reorder ?? '' }] },
+    { type: 'select', id: 'active', label: 'Status', options: [['true', 'In use'], ['false', 'Not in use (hidden from lists)']], def: String(m?.active ?? true) },
   ],
-  onSubmit: async (v) => { await rpc('rpc_save_medicine', { p_id: m?.id ?? null, p_name: v.name, p_unit: v.unit, p_reorder: v.reorder, p_active: v.active === 'true' }); return 'Saved.'; },
+  onSubmit: async (v) => {
+    await rpc('rpc_medicine_save', { p_id: m?.id ?? null, p_name: v.name, p_category: chosenCategory(v), p_unit: v.unit, p_reorder: v.reorder, p_active: v.active === 'true' });
+    return m ? 'Saved.' : `${v.name} added. Record its first delivery with "Record use or delivery".`;
+  },
 });
 
 export const scheduleForm = (D: Dashboard, e?: ScheduleItem): FormSpec => ({

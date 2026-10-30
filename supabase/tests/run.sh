@@ -9,3 +9,4 @@ $P -d dpv_test -f supabase/tests/00_supabase_shim.sql >/dev/null
 for f in supabase/migrations/*.sql; do $P -d dpv_test -f "$f" >/dev/null 2>&1 || { $P -d dpv_test -f "$f"; exit 1; }; done
 $P -d dpv_test -f supabase/tests/01_flows.sql
 $P -d dpv_test -f supabase/tests/03_auth.sql
+$P -d dpv_test -f supabase/tests/04_farm_changes.sql

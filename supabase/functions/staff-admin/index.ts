@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
           .map((c) => c.locked_until).sort().pop() ?? null;
       return json({ staff: (staff ?? []).map((s) => ({
         ...s, mfa_enabled: (factors ?? []).some((f) => f.staff_id === s.id && f.confirmed_at),
-        mfa_required: ['owner', 'manager'].includes(s.role), locked_until: locked(s),
+        mfa_required: false, locked_until: locked(s),   // two-step is optional for every role
       })) });
     }
 

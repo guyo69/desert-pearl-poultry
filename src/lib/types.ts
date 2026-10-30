@@ -4,7 +4,7 @@ export type Item = 'N' | 'C' | 'J';
 export interface Q { n: number; c: number; j: number }
 
 export interface Settings {
-  tray_n: number; pc_n: number; tray_c: number; pc_j: number;
+  tray_n: number; pc_n: number; tray_c: number; pc_c: number; pc_j: number;
   feed_buffer_kg: number; bag_kg: number; bag_price: number;
   tank_capacity_l: number; water_drop_pct: number; water_ratio_min: number; water_ratio_max: number;
   cash_tol: number; unbanked_max: number; break_tol: number; lay_drop_pts: number;
@@ -13,7 +13,7 @@ export interface Settings {
 export interface Location { id: string; name: string; short: string; kind: 'farm' | 'van' | 'shop'; sort: number }
 export interface Account { id: string; name: string; kind: 'cash' | 'till' | 'paybill' | 'bank'; location_id: string | null; sort: number }
 export interface House { id: string; name: string; birds_at_start: number; start_date: string; age_weeks_at_start: number; expected_lay: number; active: boolean; sort: number }
-export interface Medicine { id: number; name: string; unit: string; reorder: number; active: boolean; stock: number }
+export interface Medicine { id: number; name: string; category: string; unit: string; reorder: number; active: boolean; stock: number }
 export interface ScheduleItem { id: number; due: string; house: string; task: string; done: boolean }
 /** Everyone gets names and roles; only management also gets the account-security fields. */
 export interface StaffLite { id: string; display_name: string; role: Role; location_id: string | null; active: boolean; username?: string; must_change_password?: boolean; mfa_enabled?: boolean; locked?: boolean }

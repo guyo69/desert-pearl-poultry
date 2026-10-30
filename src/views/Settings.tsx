@@ -105,7 +105,7 @@ function Staff({ D }: ViewProps) {
             {s.mfa_enabled ? <span className="chip sev-ok">Two-step on</span> : <span className={`chip ${s.mfa_required ? 'sev-red' : ''}`}>{s.mfa_required ? 'Two-step not set up' : 'Two-step off'}</span>}
           </div></div>
         <div className="end"><button className="act" onClick={() => manage(s)}>Manage</button></div></div>; })}</div>}
-    <p className="muted small" style={{ marginTop: 10 }}>Five failed sign-ins lock an account for 15 minutes, longer each time it happens again. Owners and farm managers must use two-step sign-in.</p></Card>;
+    <p className="muted small" style={{ marginTop: 10 }}>Five failed sign-ins lock an account for 15 minutes, longer each time it happens again. Two-step sign-in is optional, but recommended for the owner and farm manager.</p></Card>;
 }
 
 const REASON: Record<string, string> = {
@@ -136,7 +136,7 @@ function SecurityLog() {
 }
 
 const FIELDS: [keyof S, string, string][] = [
-  ['tray_n', 'Normal eggs, per tray of 30', 'KES'], ['pc_n', 'Normal eggs, loose', 'KES each'], ['tray_c', 'Cracked eggs, per tray', 'KES'], ['pc_j', 'Jumbo eggs', 'KES each'],
+  ['tray_n', 'Normal eggs, per tray of 30', 'KES'], ['pc_n', 'Normal eggs, loose', 'KES each'], ['tray_c', 'Cracked eggs, per tray', 'KES'], ['pc_c', 'Cracked eggs, loose', 'KES each'], ['pc_j', 'Jumbo eggs', 'KES each'],
   ['feed_buffer_kg', 'Feed buffer (weekly need)', 'kg'], ['bag_kg', 'Feed bag size', 'kg'], ['bag_price', 'Feed price per bag', 'KES'],
   ['tank_capacity_l', 'Water tank size', 'L'], ['water_drop_pct', 'Water drop alert', '%'], ['water_ratio_min', 'Water per kg feed, lowest normal', 'L'], ['water_ratio_max', 'Water per kg feed, highest normal', 'L'],
   ['unbanked_max', 'Unbanked cash limit', 'KES'], ['cash_tol', 'Cash variance alert', 'KES'], ['break_tol', 'Breakage tolerance', '%'], ['lay_drop_pts', 'Lay rate drop alert', 'points'],

@@ -37,7 +37,7 @@ A database job runs every morning at 06:00 Nairobi time to check water, lay rate
 
 ## Sign-in and security
 
-Everyone signs in with a **username and password**. Owners and farm managers also use **two-step sign-in** (a 6-digit code from an authenticator app such as Google or Microsoft Authenticator); everyone else can turn it on under My account.
+Everyone signs in with a **username and password**. **Two-step sign-in** (a 6-digit code from an authenticator app such as Google or Microsoft Authenticator) is optional for every role and is turned on or off under My account. It is strongly recommended for the owner and farm manager, whose accounts can see and move money.
 
 * **Temporary password `0000`.** New accounts, and accounts the owner resets, get the temporary password 0000. It works once, for 72 hours, and only lets the person choose their own password: nothing else in the app or the database is reachable until they do.
 * **Password rules (checked on the server):** at least 8 characters with a lowercase letter, a capital, a number and a symbol; not one of the 10,000 most common passwords (also with capitals, numbers or look-alike characters added: `Password123!`, `P@ssw0rd`); no runs like `12345` or `qwerty`; not the person's name or username or the farm's name; and not found in a known data breach (Have I Been Pwned, checked with k-anonymity: only 5 characters of a hash leave the server). The app shows a strength meter while typing.
@@ -85,12 +85,12 @@ The site is static (`dist/`) plus one Edge Function, `api/gateway.ts`. `vercel.j
 
 ## Go-live checklist
 
-1. Owner signs in with username `owner` and their current PIN as the temporary password (or `0000`), chooses a password, sets up two-step sign-in and saves the backup codes.
+1. Owner signs in with username `owner` and their current PIN as the temporary password (or `0000`), chooses a password and, recommended, sets up two-step sign-in and saves the backup codes.
 2. Setup → Staff: rename each account to the real person, set usernames, add or disable as needed.
 3. Setup → Houses: hens in each house, the start date and their age, expected lay rate from the breed guide.
 4. Setup → Prices & thresholds: tray prices, feed bag price and size, feed buffer, **tank size**.
 5. On go-live morning: Setup → **Opening balances**: physical egg counts at all 5 locations, cash at each, Till, Paybill and bank balances, feed in store, water in the tank, medicine stock.
-6. Each person signs in on their phone with their username and `0000`, chooses a password (the farm manager also sets up two-step sign-in), and turns on phone notifications under My account. Temporary passwords expire after 72 hours; the owner can reset them.
+6. Each person signs in on their phone with their username and `0000`, chooses a password (two-step sign-in is optional; recommended for the farm manager), and turns on phone notifications under My account. Temporary passwords expire after 72 hours; the owner can reset them.
 
 ## Development
 
