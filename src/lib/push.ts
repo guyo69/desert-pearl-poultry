@@ -1,5 +1,5 @@
 // Phone notifications through the app's service worker (Web Push).
-import { callFn, rpc } from './api';
+import { pushKey, rpc } from './api';
 
 const b64ToBytes = (b64: string) => {
   const pad = '='.repeat((4 - (b64.length % 4)) % 4);
@@ -22,7 +22,7 @@ export async function enablePush() {
   const perm = await Notification.requestPermission();
   if (perm !== 'granted') throw new Error('Notifications are blocked. Allow them in the browser or phone settings.');
   const reg = await navigator.serviceWorker.ready;
-  const { public_key } = await callFn<{ public_key: string }>('push-notify', undefined, 'GET');
+  const { public_key } = await pushKey();
   const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(public_key) });
   const j = sub.toJSON();
   await rpc('rpc_save_push', { p_endpoint: sub.endpoint, p_p256dh: j.keys?.p256dh, p_auth: j.keys?.auth });

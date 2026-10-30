@@ -6,3 +6,5 @@ dev-dist
 .DS_Store
 supabase/.temp
 *.tsbuildinfo
+.env*.local
+.vercel

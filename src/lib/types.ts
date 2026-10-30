@@ -15,8 +15,11 @@ export interface Account { id: string; name: string; kind: 'cash' | 'till' | 'pa
 export interface House { id: string; name: string; birds_at_start: number; start_date: string; age_weeks_at_start: number; expected_lay: number; active: boolean; sort: number }
 export interface Medicine { id: number; name: string; unit: string; reorder: number; active: boolean; stock: number }
 export interface ScheduleItem { id: number; due: string; house: string; task: string; done: boolean }
-export interface StaffLite { id: string; display_name: string; role: Role; location_id: string | null; active: boolean; must_change_pin: boolean | null; locked: boolean | null }
-export interface Me { id: string; display_name: string; role: Role; location_id: string | null; must_change_pin: boolean }
+/** Everyone gets names and roles; only management also gets the account-security fields. */
+export interface StaffLite { id: string; display_name: string; role: Role; location_id: string | null; active: boolean; username?: string; must_change_password?: boolean; mfa_enabled?: boolean; locked?: boolean }
+/** The owner's staff tool (staff-admin "list"). */
+export interface StaffAdminRow extends StaffLite { username: string; must_change_password: boolean; temp_expires_at: string | null; password_changed_at: string | null; mfa_enabled: boolean; mfa_required: boolean; locked_until: string | null; created_at: string }
+export interface Me { id: string; display_name: string; role: Role; location_id: string | null; username: string; password_changed_at: string | null; mfa_enabled: boolean; mfa_required: boolean; backup_codes_left: number }
 
 export type StockKind = 'coll' | 'out' | 'recv' | 'sold' | 'brk' | 'adj';
 export interface StockRow extends Q { location_id: string }

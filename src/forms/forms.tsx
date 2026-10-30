@@ -1,6 +1,6 @@
 // Every data-entry form in the app. Each returns a FormSpec; the database
 // function behind it re-checks everything, so these checks are for speed only.
-import { changePin, rpc, staffAdmin } from '../lib/api';
+import { rpc, staffAdmin } from '../lib/api';
 import { eggs, kes, n0, pct } from '../lib/format';
 import { ITEMS, ITEM_NAME, accName, balance, band, cashAcc, feedInfo, locName, priceOf, stockNow, tankInfo, tot, waterOn } from '../lib/metrics';
 import type { Dashboard, House, Medicine, Q, ScheduleItem, StaffLite, Transfer } from '../lib/types';
@@ -300,18 +300,6 @@ export const voidForm = (kind: string, id: number, what: string): FormSpec => ({
 });
 
 /* ---------------- me ---------------- */
-export const changePinForm = (): FormSpec => ({
-  title: 'Change PIN',
-  fields: [{ type: 'pin', id: 'cur', label: 'Current PIN' }, { type: 'pin', id: 'next', label: 'New PIN (4 to 6 digits)' }, { type: 'pin', id: 'again', label: 'New PIN again' }],
-  submit: 'Change PIN',
-  onSubmit: async (v) => {
-    if (!/^\d{4,6}$/.test(v.next)) throw new Error('The new PIN must be 4 to 6 digits.');
-    if (v.next !== v.again) throw new Error('The new PINs do not match.');
-    await changePin(v.cur, v.next);
-    return 'PIN changed. Use the new PIN next time you sign in.';
-  },
-});
-
 /* ---------------- owner & manager setup ---------------- */
 export const houseForm = (D: Dashboard, h?: House): FormSpec => ({
   title: h ? `Edit ${h.name}` : 'Add a house',
@@ -350,17 +338,20 @@ export const scheduleForm = (D: Dashboard, e?: ScheduleItem): FormSpec => ({
 const ROLE_OPTS: [string, string][] = [['pos', 'Sales point attendant / van driver'], ['clerk', 'Production clerk'], ['manager', 'Farm manager'], ['owner', 'Owner']];
 export const staffForm = (D: Dashboard, s?: StaffLite): FormSpec => ({
   title: s ? `Edit ${s.display_name}` : 'Add staff member',
-  intro: !s ? <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>New staff sign in with PIN <b>0000</b> and are asked to change it.</p> : undefined,
+  intro: !s ? <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>They sign in with this username and the temporary password <b>0000</b>. It works once, for 72 hours, and they must choose their own password straight away. Owners and farm managers also set up two-step sign-in.</p> : undefined,
   fields: [
     { type: 'text', id: 'name', label: 'Name', def: s?.display_name ?? '' },
+    { type: 'text', id: 'username', label: 'Username (lowercase, no spaces)', def: s?.username ?? '', placeholder: 'e.g. jane.w' },
     { type: 'select', id: 'role', label: 'Role', options: ROLE_OPTS, def: s?.role ?? 'pos' },
     { type: 'select', id: 'loc', label: 'Location', options: D.locations.map((l): [string, string] => [l.id, l.name]), def: s?.location_id ?? 'FARM' },
     ...(s ? [{ type: 'select', id: 'active', label: 'Access', options: [['true', 'Active'], ['false', 'Disabled']], def: String(s.active) } as Field] : []),
   ],
   onSubmit: async (v) => {
-    if (s) await staffAdmin({ action: 'update', staff_id: s.id, display_name: v.name, role: v.role, location_id: v.role === 'owner' ? null : v.loc, active: v.active === 'true' });
-    else await staffAdmin({ action: 'create', display_name: v.name, role: v.role, location_id: v.role === 'owner' ? null : v.loc });
-    return s ? 'Staff member updated.' : `${v.name} added. Their PIN is 0000 until they change it.`;
+    const username = String(v.username ?? '').trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(username)) throw new Error('Username: 3 to 32 lowercase letters, numbers, dots or dashes.');
+    if (s) await staffAdmin({ action: 'update', staff_id: s.id, username, display_name: v.name, role: v.role, location_id: v.role === 'owner' ? null : v.loc, active: v.active === 'true' });
+    else await staffAdmin({ action: 'create', username, display_name: v.name, role: v.role, location_id: v.role === 'owner' ? null : v.loc });
+    return s ? (v.active === 'false' && s.active ? `${v.name} is disabled and signed out.` : 'Staff member updated.') : `${v.name} added. Username ${username}, temporary password 0000 (valid 72 hours).`;
   },
 });
 

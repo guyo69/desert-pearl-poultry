@@ -376,17 +376,52 @@ tfoot td{font-weight:700;border-top:.5px solid var(--line-strong);border-bottom:
 .role .av svg{width:19px;height:19px;stroke-width:2}
 .role b{display:block;font-size:16px;font-weight:500;letter-spacing:-.015em}
 .role small{color:var(--muted);font-size:13px}
-.who{display:flex;align-items:center;gap:12px}
-.who .av{width:48px;height:48px;border-radius:13px;display:grid;place-items:center;color:#fff}
-.pinpad{display:grid;grid-template-columns:repeat(3,78px);gap:16px 26px;justify-content:center;margin:22px 0 10px}
-.pinpad button{width:78px;height:78px;border-radius:50%;border:0;background:var(--fill);font-family:var(--font-display);font-size:34px;font-weight:400;transition:background .12s,transform .12s}
-.pinpad button:active{background:var(--fill-2);transform:scale(.94)}
-.pinpad .ghost{background:none;font-size:16px;font-weight:500;color:var(--accent)}
-.pinpad .ghost:disabled{color:var(--faint)}
-.pindots{display:flex;gap:18px;justify-content:center;margin:16px 0 4px}
-.pindots i{width:13px;height:13px;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--fg);transition:background .15s,transform .15s}
-.pindots i.on{background:var(--fg);transform:scale(1.05)}
-.pin-err{color:var(--f-none);text-align:center;font-weight:500;min-height:22px;font-size:15px}
+.login .sub{font-size:16px;margin-top:2px}
+.login .backlnk{margin:0 0 18px -6px;display:inline-flex;align-items:center;gap:2px}
+.login .body-in.narrow{max-width:420px;display:flex;flex-direction:column;gap:14px;margin-top:14px}
+.login .card h3{margin:0 0 6px}
+.authform{display:flex;flex-direction:column;gap:14px}
+.authform .btn.wide,.btn.wide{width:100%}
+.small{font-size:13.5px;margin:0}
+.small svg{width:14px;height:14px;vertical-align:-2px}
+.center-t{text-align:center}
+.blockc{display:block;margin:0 auto}
+.form-err{color:var(--f-none);font-weight:500;font-size:14.5px;min-height:20px}
+.form-err:empty{min-height:0}
+.inp .eye{border:0;background:none;color:var(--muted);padding:0 12px;align-self:stretch;display:grid;place-items:center}
+.inp .eye svg{width:21px;height:21px}
+.inp input.otp{font-size:26px;letter-spacing:.35em;font-variant-numeric:tabular-nums;text-align:center;padding-left:calc(14px + .35em)}
+.meter{display:flex;flex-direction:column;gap:6px;margin-top:-4px}
+.meter .bars{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+.meter .bars i{height:5px;border-radius:3px;background:var(--fill-2);transition:background .25s}
+.meter .bars.s0 i.on,.meter .bars.s1 i.on{background:var(--f-none)}
+.meter .bars.s2 i.on{background:var(--f-low)}
+.meter .bars.s3 i.on{background:var(--f-good)}
+.meter .bars.s4 i.on{background:var(--f-full)}
+.meter-l{display:flex;justify-content:space-between;gap:10px;font-size:13.5px;flex-wrap:wrap}
+.meter-l b{font-weight:600}
+.meter-l small{color:var(--muted)}
+.rules{list-style:none;margin:2px 0 0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;font-size:13px;color:var(--muted)}
+.rules li{display:flex;align-items:center;gap:5px}
+.rules li svg{width:14px;height:14px;flex:none}
+.rules li.ok{color:color-mix(in srgb,var(--f-full) 75%,var(--fg))}
+@media (max-width:360px){.rules{grid-template-columns:1fr}}
+.steps{margin:0;padding-left:20px;font-size:15px;display:flex;flex-direction:column;gap:6px}
+.qr{display:grid;place-items:center;min-height:232px}
+.qr img{border-radius:12px;background:#fff;image-rendering:pixelated}
+.manual{font-size:14px}
+.manual summary{color:var(--accent);cursor:pointer}
+.manual .secret{display:block;margin:8px 0;padding:10px 12px;border-radius:10px;background:var(--fill);font-size:15px;word-break:break-all;user-select:all}
+.codes{list-style:none;padding:0;margin:12px 0;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.codes code,.userlist code{font-size:16px;font-variant-numeric:tabular-nums;letter-spacing:.03em}
+.codes li{background:var(--fill);border-radius:9px;padding:9px 10px;text-align:center}
+.userlist{margin:8px 0 0;padding-left:18px;font-size:14.5px;display:flex;flex-direction:column;gap:3px}
+.check{display:flex;align-items:center;gap:9px;margin:14px 0;font-size:15px}
+.check input{width:20px;height:20px;accent-color:var(--accent)}
+.turnstile{min-height:65px}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+.seclog .li .mid small.ua{font-size:12px}
+.sec-bad{color:var(--f-none)}
 .more-btn{align-self:center}
 .void{opacity:.5}
 

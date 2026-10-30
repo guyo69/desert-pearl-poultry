@@ -13,8 +13,10 @@ begin
 end $$;
 grant execute on function public.t_err(text, text) to authenticated, anon;
 
-create function public.t_as(p uuid) returns void language sql as $$
-  select set_config('request.jwt.claim.sub', coalesce(p::text, ''), false)
+-- act as a staff member, in their (fully verified) test session
+create function public.t_as(p uuid) returns void language sql security definer set search_path = public as $$
+  select set_config('request.jwt.claims', case when p is null then '' else json_build_object('sub', p,
+           'session_id', (select id from auth.sessions where user_id = p order by created_at limit 1))::text end, false);
 $$;
 grant execute on function public.t_as(uuid) to authenticated, anon;
 
@@ -31,6 +33,14 @@ insert into public.staff (id, display_name, role, location_id) values
  ('00000000-0000-0000-0000-000000000006','Tuala Attendant','pos','TUALA'),
  ('00000000-0000-0000-0000-000000000007','Rayan Fedha Attendant','pos','RAYAN'),
  ('00000000-0000-0000-0000-000000000008','Lucky Summer Attendant','pos','LUCKY');
+
+-- every test account has set its own password and has a live session;
+-- owner and manager have two-step sign-in and passed it in that session
+update public.staff set must_change_password = false, temp_expires_at = null;
+insert into auth.sessions (user_id) select id from public.staff;
+insert into public.mfa_factors (staff_id, secret_enc, confirmed_at) select id, 'test', now() from public.staff where role in ('owner','manager');
+insert into public.mfa_sessions (session_id, staff_id)
+  select x.id, x.user_id from auth.sessions x join public.staff s on s.id = x.user_id where s.role in ('owner','manager');
 
 set role authenticated;
 
@@ -130,7 +140,7 @@ do $$ begin assert (select n from v_stock where location_id='TUALA') = 30, 'tual
 -- ---------- anon ----------
 select t_as(null);
 set role anon;
-do $$ begin assert (select count(*) from staff_directory()) = 8, 'directory'; end $$;
+select t_err($$select * from staff_directory()$$, 'permission denied');  -- names are no longer public
 select t_err($$select dashboard()$$, 'permission denied');
 select t_err($$select * from sales$$, 'permission denied');
 set role authenticated;

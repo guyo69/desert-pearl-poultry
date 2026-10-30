@@ -1,21 +1,19 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import type { Session } from '@supabase/supabase-js';
-import { loadDashboard, rpc, signOut } from './lib/api';
-import { configured, supabase } from './lib/supabase';
+import { AUTH_EVENT, RELOAD_EVENT, authStatus, forgetLegacyStorage, loadDashboard, rpc, signOut as endSession, type AuthStatus } from './lib/api';
 import { alertsFor } from './lib/metrics';
 import type { Dashboard, Role } from './lib/types';
-import { changePinForm, collectForm, saleForm } from './forms/forms';
+import { collectForm, saleForm } from './forms/forms';
 import { Icon } from './ui/icons';
 import { UIProvider, useUI } from './ui/ui';
 import { AlertList } from './ui/widgets';
-import { Login } from './views/Login';
+import { Login, MfaEnroll, MfaVerify, NewPassword } from './views/Auth';
 import { Alerts, Money, Overview, Report, Stock, type ViewProps } from './views/Management';
 import { ClerkHome, Feed, Health, Records, Water } from './views/Farm';
 import { PosMoney, PosSales, PosStock, PosToday } from './views/SalesPoint';
 import { Account, Setup } from './views/Settings';
 import { NoticeList } from './views/common';
 
-type Tab = { label: string; icon: string; view: (p: ViewProps & { signOut: () => void }) => ReactNode };
+type Tab = { label: string; icon: string; view: (p: ViewProps & { signOut: (everywhere?: boolean) => void }) => ReactNode };
 const TABS: Record<string, Tab> = {
   ov: { label: 'Overview', icon: 'dash', view: (p) => <Overview {...p} /> },
   alerts: { label: 'Alerts', icon: 'bell', view: (p) => <Alerts {...p} /> },
@@ -42,7 +40,6 @@ const ROLE_TABS: Record<Role, string[]> = {
   pos: ['today', 'pstock', 'psales', 'pmoney', 'me'],
 };
 const ROLE_NAME: Record<Role, string> = { owner: 'Owner', manager: 'Farm Manager', clerk: 'Production Clerk', pos: 'Sales point' };
-const CACHE = 'dpv-dashboard';
 
 function useOnline() {
   const [on, setOn] = useState(navigator.onLine);
@@ -54,58 +51,83 @@ function useOnline() {
   return on;
 }
 
+/**
+ * Sign-in state comes from the server (the session itself is in HttpOnly
+ * cookies this page cannot read). Any AUTH_* answer from the server makes
+ * the app ask again, so a session ended elsewhere (password change, owner
+ * reset, 12-hour limit) drops back to the right screen at once.
+ */
 export default function App() {
-  const [session, setSession] = useState<Session | null | undefined>(undefined);
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
-    return () => data.subscription.unsubscribe();
+  const [st, setSt] = useState<AuthStatus | null>(null);
+  const [notice, setNotice] = useState('');
+  const [offline, setOffline] = useState('');
+  const last = useRef<string>('');
+  const check = useCallback(async () => {
+    try {
+      const s = await authStatus();
+      if (last.current === 'ready' && s.state !== 'ready') {
+        setNotice(s.state === 'expired' ? 'Your session reached its 12-hour limit. Sign in again.' : s.state === 'inactive' ? 'This account was disabled.' : s.state === 'none' ? 'You were signed out.' : '');
+      }
+      last.current = s.state;
+      setOffline(''); setSt(s);
+    } catch (e) { setOffline((e as Error).message); }
   }, []);
-  if (!configured) return <div className="center"><div className="card" style={{ maxWidth: 480 }}><h3>App not configured</h3><p className="muted">Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, then rebuild. See README.md.</p></div></div>;
-  if (session === undefined) return <div className="center"><div className="spinner" /></div>;
-  if (!session) return <Login />;
-  return <Signed key={session.user.id} />;
+  useEffect(() => {
+    forgetLegacyStorage();
+    check();
+    const on = () => check();
+    addEventListener(AUTH_EVENT, on);
+    return () => removeEventListener(AUTH_EVENT, on);
+  }, [check]);
+  const out = useCallback(async (everywhere = false) => { await endSession(everywhere); setNotice(''); last.current = ''; await check(); }, [check]);
+
+  if (!st) return <div className="center">{offline ? <div className="card" style={{ maxWidth: 440 }}><h3>Cannot reach Desert Pearl</h3><p className="muted">{offline}</p>
+    <button className="btn" onClick={check}>Try again</button></div> : <div className="spinner" />}</div>;
+  const u = st.user;
+  if (st.state === 'ready' && u) return <Signed key={u.id} signOut={out} />;
+  if (st.state === 'set_password' && u) return <NewPassword forced user={u} onDone={check} onSignOut={() => out()} />;
+  if (st.state === 'mfa_enroll' && u) return <MfaEnroll user={u} onDone={check} onSignOut={() => out()} />;
+  if (st.state === 'mfa_verify' && u) return <MfaVerify user={u} onSignOut={() => out()}
+    onDone={(r) => { if (r.used_backup) setNotice(`You used a backup code. ${r.backup_codes_left ?? 0} left. Make new ones under My account.`); check(); }} />;
+  return <Login setupNeeded={st.setup_needed} notice={notice || (st.state === 'temp_expired' ? 'Your temporary password expired. Ask the owner to reset it.' : '')} onDone={() => { setNotice(''); check(); }} />;
 }
 
-function Signed() {
-  const [D, setD] = useState<Dashboard | null>(() => { try { const c = localStorage.getItem(CACHE); return c ? JSON.parse(c) : null; } catch { return null; } });
+function Signed({ signOut }: { signOut: (everywhere?: boolean) => void }) {
+  // farm data is kept in memory only: nothing is left on the device after sign-out
+  const [D, setD] = useState<Dashboard | null>(null);
   const [err, setErr] = useState('');
   const [version, setVersion] = useState(0);
-  const timer = useRef<number>();
   const reload = useCallback(async () => {
     try {
       const d = await loadDashboard(90);
       setD(d); setErr(''); setVersion((v) => v + 1);
-      try { localStorage.setItem(CACHE, JSON.stringify(d)); } catch { /* storage full or blocked */ }
     } catch (e) { setErr((e as Error).message); }
   }, []);
-  const soon = useCallback(() => { clearTimeout(timer.current); timer.current = window.setTimeout(reload, 600); }, [reload]);
 
   useEffect(() => {
     reload();
-    const ch = supabase.channel('dpv-live').on('postgres_changes', { event: '*', schema: 'public' }, soon).subscribe();
+    // live updates: every 30 s while the app is on screen, and at once when it comes back
+    const every = window.setInterval(() => { if (document.visibilityState === 'visible') reload(); }, 30000);
     const vis = () => { if (document.visibilityState === 'visible') reload(); };
     document.addEventListener('visibilitychange', vis);
-    const every = window.setInterval(reload, 120000);
     const msg = (e: MessageEvent) => { if (e.data?.type === 'refresh') reload(); };
     navigator.serviceWorker?.addEventListener('message', msg);
-    return () => { supabase.removeChannel(ch); document.removeEventListener('visibilitychange', vis); clearInterval(every); navigator.serviceWorker?.removeEventListener('message', msg); };
-  }, [reload, soon]);
+    addEventListener(RELOAD_EVENT, reload);
+    return () => { clearInterval(every); document.removeEventListener('visibilitychange', vis); navigator.serviceWorker?.removeEventListener('message', msg); removeEventListener(RELOAD_EVENT, reload); };
+  }, [reload]);
 
-  const out = async () => { try { localStorage.removeItem(CACHE); } catch { /* ignore */ } await signOut(); };
-  if (!D) return <div className="center">{err ? <div className="card" style={{ maxWidth: 440 }}><h3>Cannot load the farm data</h3><p className="muted">{err}</p><div className="row-btns"><button className="btn" onClick={reload}>Try again</button><button className="btn alt" onClick={out}>Sign out</button></div></div> : <div className="spinner" />}</div>;
+  const out = (everywhere = false) => { setD(null); signOut(everywhere); };
+  if (!D) return <div className="center">{err ? <div className="card" style={{ maxWidth: 440 }}><h3>Cannot load the farm data</h3><p className="muted">{err}</p><div className="row-btns"><button className="btn" onClick={reload}>Try again</button><button className="btn alt" onClick={() => out()}>Sign out</button></div></div> : <div className="spinner" />}</div>;
   return <UIProvider afterSave={reload}><Shell D={D} version={version} err={err} signOut={out} reload={reload} /></UIProvider>;
 }
 
-function Shell({ D, version, err, signOut, reload }: { D: Dashboard; version: number; err: string; signOut: () => void; reload: () => void }) {
+function Shell({ D, version, err, signOut, reload }: { D: Dashboard; version: number; err: string; signOut: (everywhere?: boolean) => void; reload: () => void }) {
   const ui = useUI(), online = useOnline();
   const tabs = ROLE_TABS[D.me.role];
   const [tab, setTab] = useState<string>(() => { const h = location.hash.slice(1); return tabs.includes(h) ? h : tabs[0]; });
   const [drawer, setDrawer] = useState(false);
-  const promptedPin = useRef(false);
   const go = (t: string) => { setTab(t); setDrawer(false); try { history.replaceState(null, '', `#${t}`); } catch { /* ignore */ } window.scrollTo(0, 0); };
   useEffect(() => { if (!tabs.includes(tab)) setTab(tabs[0]); }, [tabs, tab]);
-  useEffect(() => { if (D.me.must_change_pin && !promptedPin.current) { promptedPin.current = true; ui.openForm(changePinForm()); } }, [D.me.must_change_pin, ui]);
 
   const myAlerts = alertsFor(D);
   const unread = D.notifications.filter((n) => !n.read);
@@ -134,7 +156,7 @@ function Shell({ D, version, err, signOut, reload }: { D: Dashboard; version: nu
         {tabs.map((t) => <button key={t} aria-current={tab === t} onClick={() => go(t)}><Icon name={TABS[t].icon} />{TABS[t].label}</button>)}
         {!tabs.includes('me') && !tabs.includes('setup') && <button onClick={() => go('me')}><Icon name="user" />My account</button>}</nav>
       <main key={tab}>
-        {D.me.must_change_pin && <div className="banner warn"><div><b>You are using the default PIN 0000</b><p>Anyone who knows it can sign in as you. Choose your own PIN.</p></div><button className="btn yolk" onClick={() => ui.openForm(changePinForm())}>Change PIN</button></div>}
+        {D.me.backup_codes_left !== undefined && D.me.mfa_enabled && D.me.backup_codes_left <= 2 && tab !== 'me' && <div className="banner warn"><div><b>{D.me.backup_codes_left} backup code{D.me.backup_codes_left === 1 ? '' : 's'} left</b><p>Make a new set so you can still sign in if your phone is lost.</p></div><button className="btn sm" onClick={() => go('me')}>My account</button></div>}
         {err && online && <div className="banner warn"><div><b>Could not refresh</b><p>{err}</p></div><button className="btn sm" onClick={reload}>Try again</button></div>}
         {(tabs.includes(tab) || tab === 'me' ? TABS[tab] : TABS[tabs[0]]).view(props)}
       </main>
@@ -145,8 +167,8 @@ function Shell({ D, version, err, signOut, reload }: { D: Dashboard; version: nu
       <nav><div className="dh"><b>{D.me.display_name}</b><small>{ROLE_NAME[D.me.role]}{loc ? ` · ${loc.name}` : ''}</small></div>
         {tabs.map((t) => <button key={t} onClick={() => go(t)}><Icon name={TABS[t].icon} />{TABS[t].label}</button>)}
         {!tabs.includes('me') && <button onClick={() => go('me')}><Icon name="user" />My account</button>}
-        <button onClick={() => { setDrawer(false); ui.openForm(changePinForm()); }}><Icon name="lock" />Change PIN</button>
-        <button onClick={signOut}><Icon name="logout" />Sign out</button>
+        <button onClick={() => go('me')}><Icon name="shield" />Password &amp; two-step sign-in</button>
+        <button onClick={() => signOut()}><Icon name="logout" />Sign out</button>
         <div className="note">Desert Pearl Ventures Ltd · Tuala Farm Fresh Eggs</div></nav></div>}
   </>;
 }

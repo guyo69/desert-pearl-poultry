@@ -1,24 +1,14 @@
-// Staff accounts. Owner only, except "bootstrap", which works once on an empty system.
-//   { action: 'bootstrap' }                                   -> creates the default team, all with PIN 0000
+// Staff accounts. Owner only, and only from a fully verified session
+// (password set, two-step sign-in passed). Called through the gateway.
 //   { action: 'list' }
-//   { action: 'create', display_name, role, location_id }     -> new account with PIN 0000
-//   { action: 'update', staff_id, display_name?, role?, location_id?, active? }
-//   { action: 'reset_pin', staff_id }                         -> back to 0000 and unlocked
-import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { DEFAULT_PIN, adminClient, caller, cors, json, pinPassword, readJson, staffEmail } from '../_shared/util.ts';
-
-const ROLES = ['owner', 'manager', 'clerk', 'pos'];
-
-const DEFAULT_TEAM = [
-  { display_name: 'Owner', role: 'owner', location_id: null },
-  { display_name: 'Farm Manager', role: 'manager', location_id: 'FARM' },
-  { display_name: 'Production Clerk', role: 'clerk', location_id: 'FARM' },
-  { display_name: 'Farm Counter', role: 'pos', location_id: 'FARM' },
-  { display_name: 'Van Driver', role: 'pos', location_id: 'VAN' },
-  { display_name: 'Tuala Egg Shop Attendant', role: 'pos', location_id: 'TUALA' },
-  { display_name: 'Rayan Fedha Attendant', role: 'pos', location_id: 'RAYAN' },
-  { display_name: 'Lucky Summer Attendant', role: 'pos', location_id: 'LUCKY' },
-];
+//   { action: 'create', username, display_name, role, location_id }   -> temporary password 0000 (72 h)
+//   { action: 'update', staff_id, username?, display_name?, role?, location_id?, active? }
+//   { action: 'reset_password', staff_id }   -> temporary password 0000 (72 h), signed out everywhere
+//   { action: 'reset_mfa', staff_id }        -> two-step removed; owner/manager must set it up again
+//   { action: 'unlock', staff_id }           -> clears failed-attempt lockouts
+//   { action: 'sign_out', staff_id }         -> ends every session of that person
+import { TEMP_PASSWORD, adminClient, caller, clientIp, clientUa, derivedPassword, fromGateway, json, readJson, str } from '../_shared/util.ts';
+import { ROLES, USERNAME, createStaff } from '../_shared/staff.ts';
 
 function checkShape(role: unknown, location_id: unknown): string | null {
   if (typeof role !== 'string' || !ROLES.includes(role)) return 'Choose a role.';
@@ -27,88 +17,116 @@ function checkShape(role: unknown, location_id: unknown): string | null {
   return null;
 }
 
-async function createStaff(db: SupabaseClient, p: { display_name: string; role: string; location_id: string | null }) {
-  const id = crypto.randomUUID();
-  const { error } = await db.auth.admin.createUser({
-    id, email: staffEmail(id), email_confirm: true,
-    password: await pinPassword(db, id, DEFAULT_PIN),
-    app_metadata: { dpv_role: p.role },
-  });
-  if (error) throw new Error(error.message);
-  const { error: e2 } = await db.from('staff').insert({
-    id, display_name: p.display_name.trim(), role: p.role,
-    location_id: p.role === 'owner' ? null : p.location_id, must_change_pin: true,
-  });
-  if (e2) { await db.auth.admin.deleteUser(id); throw new Error(e2.message); }
-  return id;
-}
-
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return json({ error: 'Use POST' }, 405);
   const db = adminClient();
+  if (!await fromGateway(db, req)) return json({ error: 'Not found' }, 404);
   const body = await readJson(req);
-  const action = body.action;
+  const action = str(body.action, 40);
+  const ip = clientIp(req);
 
+  const log = (ok: boolean, reason: string, target?: string) => db.rpc('auth_record', {
+    p_kind: 'admin', p_ip: ip, p_subject: null, p_ok: ok, p_reason: `${action}${target ? ` ${target}` : ''}: ${reason}`,
+    p_staff: me?.uid ?? null, p_username: me?.staff.username ?? null, p_ua: clientUa(req), p_count: false,
+  });
+
+  const me = await caller(db, req);
   try {
-    if (action === 'bootstrap') {
-      const { count, error } = await db.from('staff').select('id', { count: 'exact', head: true });
-      if (error) throw error;
-      if ((count ?? 0) > 0) return json({ error: 'The team is already set up. Sign in as the owner to add staff.' }, 409);
-      for (const p of DEFAULT_TEAM) await createStaff(db, p);
-      return json({ ok: true, created: DEFAULT_TEAM.length });
-    }
-
-    const me = await caller(db, req);
-    if (!me) return json({ error: 'Sign in again.' }, 401);
-    if (me.role !== 'owner') return json({ error: 'Only the owner can manage staff.' }, 403);
+    if (!me || me.state !== 'ready') return json({ error: 'Sign in again.', code: 'SIGNED_OUT' }, 401);
+    if (me.staff.role !== 'owner') { await log(false, 'not owner'); return json({ error: 'Only the owner can manage staff.' }, 403); }
+    const { data: g } = await db.rpc('auth_check', { p_kind: 'admin', p_ip: ip, p_subject: null });
+    if (g && !g.allowed) return json({ error: 'Too many requests. Wait a few minutes.' }, 429);
 
     if (action === 'list') {
-      const { data, error } = await db.from('staff')
-        .select('id, display_name, role, location_id, active, must_change_pin, locked_until, failed_attempts, created_at')
-        .order('created_at');
+      const [{ data: staff, error }, { data: factors }, { data: counters }] = await Promise.all([
+        db.from('staff').select('id, username, display_name, role, location_id, active, must_change_password, temp_expires_at, password_changed_at, created_at').order('created_at'),
+        db.from('mfa_factors').select('staff_id, confirmed_at'),
+        db.from('auth_counters').select('key, locked_until').gt('locked_until', new Date().toISOString()),
+      ]);
       if (error) throw error;
-      return json({ staff: data });
+      const locked = (s: { id: string; username: string }) =>
+        (counters ?? []).filter((c) => c.key === `sub:login:${s.username}` || c.key.startsWith('sub:') && c.key.endsWith(`:${s.id}`))
+          .map((c) => c.locked_until).sort().pop() ?? null;
+      return json({ staff: (staff ?? []).map((s) => ({
+        ...s, mfa_enabled: (factors ?? []).some((f) => f.staff_id === s.id && f.confirmed_at),
+        mfa_required: ['owner', 'manager'].includes(s.role), locked_until: locked(s),
+      })) });
     }
 
     if (action === 'create') {
-      const { display_name, role, location_id } = body as Record<string, string>;
-      if (!display_name?.trim()) return json({ error: 'Enter a name.' }, 400);
+      const username = str(body.username, 40).trim().toLowerCase();
+      const display_name = str(body.display_name, 80).trim();
+      const role = str(body.role, 20), location_id = str(body.location_id, 20) || null;
+      if (!display_name) return json({ error: 'Enter a name.' }, 400);
+      if (!USERNAME.test(username)) return json({ error: 'Username: 3 to 32 lowercase letters, numbers, dots or dashes.' }, 400);
       const bad = checkShape(role, location_id);
       if (bad) return json({ error: bad }, 400);
-      const id = await createStaff(db, { display_name, role, location_id: location_id ?? null });
-      return json({ ok: true, id });
+      const id = await createStaff(db, { username, display_name, role, location_id });
+      await log(true, `created ${username} (${role})`, id);
+      return json({ ok: true, id, temporary_password: TEMP_PASSWORD });
     }
 
-    const staff_id = body.staff_id as string;
-    const { data: target } = await db.from('staff').select('*').eq('id', staff_id ?? '').maybeSingle();
+    const staff_id = str(body.staff_id, 40);
+    const { data: target } = await db.from('staff').select('*').eq('id', staff_id).maybeSingle();
     if (!target) return json({ error: 'Staff member not found.' }, 404);
 
-    if (action === 'reset_pin') {
-      const { error } = await db.auth.admin.updateUserById(staff_id, { password: await pinPassword(db, staff_id, DEFAULT_PIN) });
+    if (action === 'reset_password') {
+      if (staff_id === me.uid) return json({ error: 'Change your own password under My account.' }, 400);
+      const { error } = await db.auth.admin.updateUserById(staff_id, { password: await derivedPassword(db, staff_id, TEMP_PASSWORD) });
       if (error) throw new Error(error.message);
-      await db.from('staff').update({ must_change_pin: true, failed_attempts: 0, locked_until: null }).eq('id', staff_id);
+      await db.from('staff').update({ must_change_password: true, temp_expires_at: new Date(Date.now() + 72 * 3600_000).toISOString() }).eq('id', staff_id);
+      await db.rpc('auth_unlock', { p_staff: staff_id });
+      await db.rpc('auth_end_sessions', { p_uid: staff_id });
+      await log(true, 'temporary password issued, signed out everywhere', target.username);
+      return json({ ok: true, temporary_password: TEMP_PASSWORD });
+    }
+
+    if (action === 'reset_mfa') {
+      if (staff_id === me.uid) return json({ error: 'You cannot reset your own two-step sign-in. Use a backup code, or see the README for owner recovery.' }, 400);
+      await db.from('mfa_backup_codes').delete().eq('staff_id', staff_id);
+      await db.from('mfa_factors').delete().eq('staff_id', staff_id);
+      await db.rpc('auth_end_sessions', { p_uid: staff_id });
+      await log(true, 'two-step sign-in removed, signed out everywhere', target.username);
       return json({ ok: true });
     }
 
+    if (action === 'unlock') {
+      await db.rpc('auth_unlock', { p_staff: staff_id });
+      await log(true, 'unlocked', target.username);
+      return json({ ok: true });
+    }
+
+    if (action === 'sign_out') {
+      const { data: n } = await db.rpc('auth_end_sessions', { p_uid: staff_id, p_keep: staff_id === me.uid ? me.sid : null });
+      await log(true, `${n ?? 0} session(s) ended`, target.username);
+      return json({ ok: true, ended: n ?? 0 });
+    }
+
     if (action === 'update') {
-      const role = (body.role as string) ?? target.role;
-      const location_id = role === 'owner' ? null : ((body.location_id as string) ?? target.location_id);
+      const role = str(body.role, 20) || target.role;
+      const location_id = role === 'owner' ? null : (str(body.location_id, 20) || target.location_id);
       const bad = checkShape(role, location_id);
       if (bad) return json({ error: bad }, 400);
       const active = typeof body.active === 'boolean' ? body.active : target.active;
-      if (staff_id === me.id && (!active || role !== 'owner')) return json({ error: 'You cannot remove your own owner access.' }, 400);
+      if (staff_id === me.uid && (!active || role !== 'owner')) return json({ error: 'You cannot remove your own owner access.' }, 400);
+      const username = str(body.username, 40).trim().toLowerCase() || target.username;
+      if (!USERNAME.test(username)) return json({ error: 'Username: 3 to 32 lowercase letters, numbers, dots or dashes.' }, 400);
       const { error } = await db.from('staff').update({
-        display_name: typeof body.display_name === 'string' && body.display_name.trim() ? body.display_name.trim() : target.display_name,
+        username,
+        display_name: str(body.display_name, 80).trim() || target.display_name,
         role, location_id, active,
       }).eq('id', staff_id);
-      if (error) throw error;
-      // a disabled account loses access at once: every database rule checks staff.active
+      if (error) return json({ error: error.code === '23505' ? 'That username is taken.' : error.message }, 400);
+      // a disabled account, or one whose role changed, is signed out at once
+      if (!active || role !== target.role || location_id !== target.location_id) await db.rpc('auth_end_sessions', { p_uid: staff_id });
+      await log(true, `updated${!active && target.active ? ', disabled' : ''}${role !== target.role ? `, role ${target.role}→${role}` : ''}`, target.username);
       return json({ ok: true });
     }
 
     return json({ error: 'Unknown action.' }, 400);
   } catch (e) {
+    console.error(action, e);
+    try { await log(false, 'error'); } catch { /* logging must not hide the error */ }
     return json({ error: e instanceof Error ? e.message : 'Something went wrong.' }, 500);
   }
 });

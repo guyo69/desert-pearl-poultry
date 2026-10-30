@@ -35,50 +35,70 @@ Feed and the water tank use the same five colour bands:
 
 A database job runs every morning at 06:00 Nairobi time to check water, lay rate, feed, tank, vaccinations due, low medicine and unbanked cash.
 
-## Sign-in
+## Sign-in and security
 
-Staff tap their name and enter a PIN. **Every new account starts with PIN 0000**, and the app asks them to change it (Menu → Change PIN, or My account). The owner can reset anyone's PIN back to 0000 from Setup → Staff. Five wrong PINs lock an account for 15 minutes.
+Everyone signs in with a **username and password**. Owners and farm managers also use **two-step sign-in** (a 6-digit code from an authenticator app such as Google or Microsoft Authenticator); everyone else can turn it on under My account.
 
-PINs are never stored. Each PIN is combined with a secret server key before it reaches Supabase Auth, so it can only be tried through the app's sign-in, which has the lockout.
+* **Temporary password `0000`.** New accounts, and accounts the owner resets, get the temporary password 0000. It works once, for 72 hours, and only lets the person choose their own password: nothing else in the app or the database is reachable until they do.
+* **Password rules (checked on the server):** at least 8 characters with a lowercase letter, a capital, a number and a symbol; not one of the 10,000 most common passwords (also with capitals, numbers or look-alike characters added: `Password123!`, `P@ssw0rd`); no runs like `12345` or `qwerty`; not the person's name or username or the farm's name; and not found in a known data breach (Have I Been Pwned, checked with k-anonymity: only 5 characters of a hash leave the server). The app shows a strength meter while typing.
+* **Limits:** per network (IP), 5 failed attempts per 15 minutes per action; per account, a growing wait after each failure (1, 2, 4, 8 s), then a lockout after 5 failures for 15 minutes, doubling each time it happens again (up to 24 hours). After 3 failures the device must pass a security check (a built-in puzzle the phone solves in about a second, or Cloudflare Turnstile if configured). The same limits cover two-step codes and password changes. The owner can unlock an account early.
+* **Sessions** live in `HttpOnly; Secure; SameSite=Strict` cookies that the page's JavaScript cannot read, handled by the gateway at `/api/gateway`. Nothing about the session or the farm's data is kept in browser storage. A session ends after 12 hours, at sign-out, when the password changes (other devices), or when the owner resets or disables the account.
+* **The database decides.** Every database function checks, on every call, that the session is live, the account active, the password not temporary and, where needed, that this session passed two-step sign-in. The app's screens only show or hide buttons.
+* **Log.** Every sign-in, code, password change and staff change is recorded with time, IP and device. The owner sees it under Activity → Security.
 
-> **Do this first:** sign in as **Owner** with 0000 and change the PIN straight away. Until then anyone who opens the app can sign in as the owner.
+### Owner recovery
+
+If the owner loses both the phone and the backup codes, or the temporary password expires, run this in the Supabase dashboard (SQL editor), then sign in again:
+
+```sql
+-- remove the owner's two-step sign-in (they set it up again at the next sign-in)
+delete from public.mfa_backup_codes where staff_id = (select id from public.staff where username = 'owner');
+delete from public.mfa_factors      where staff_id = (select id from public.staff where username = 'owner');
+-- give a temporary password more time (the password itself is unchanged)
+update public.staff set temp_expires_at = now() + interval '72 hours' where username = 'owner' and must_change_password;
+```
 
 ## Live project
 
 | | |
 |---|---|
 | Supabase project | `desert-pearl-poultry` (ref `aokegaxznbobbuqnwgdo`, London) |
-| Database | migrations in `supabase/migrations`, already applied |
-| Edge functions | `pin-login`, `change-pin`, `staff-admin`, `push-notify`, already deployed |
-| Staff accounts | 8 created (Owner, Farm Manager, Production Clerk, Farm Counter, Van Driver, 3 shop attendants), all PIN 0000 |
+| Database | migrations in `supabase/migrations`, applied |
+| Edge functions | `auth`, `staff-admin`, `push-notify` (and retired stubs `pin-login`, `change-pin`) |
+| Staff accounts | `owner`, `manager`, `clerk`, `farm`, `van`, `tuala`, `rayan`, `lucky` |
 
-## Put the app online
+## Put the app online (Vercel)
 
-The app is a static site (`npm run build` → `dist/`). The quickest free host is Vercel, Netlify or Cloudflare Pages:
+The site is static (`dist/`) plus one Edge Function, `api/gateway.ts`. `vercel.json` sets the build, the security headers (Content-Security-Policy, HSTS, no framing, etc.) and the routes.
 
-1. Import this GitHub repo on the host.
-2. Build command `npm run build`, output folder `dist`.
-3. Environment variables are already in `.env.production`. They are the public project URL and anon key; data is protected by the database rules, not by hiding these.
-4. Add a rewrite of all paths to `/index.html` if the host asks (single-page app).
+1. On vercel.com: **Add New → Project →** import `guyo69/desert-pearl-poultry`. Framework: Vite (detected).
+2. **Settings → Environment Variables** (Production, Preview and Development):
+   * `SUPABASE_URL` = `https://aokegaxznbobbuqnwgdo.supabase.co`
+   * `SUPABASE_ANON_KEY` = the project's anon key (Supabase → Project Settings → API)
+   * `DPV_GATEWAY_SECRET` = the result of this query in the Supabase SQL editor (keep it secret):
+     `select value from public.app_secrets where key = 'gateway_secret';`
+3. Deploy. Then on each phone open the site and use **Add to Home Screen** (iPhone: Share → Add to Home Screen; Android: menu → Install app). On iPhone, phone notifications only work after the app is added to the Home Screen.
 
-Then on each phone open the site and use **Add to Home Screen** (iPhone: Share → Add to Home Screen; Android: menu → Install app). On iPhone, phone notifications only work after the app is added to the Home Screen.
+**In Supabase, once:** Authentication → Sign In / Providers → Email: turn **off** "Allow new users to sign up". Staff accounts are only created by the owner. (Even with it on, a self-made account has no staff record and can do nothing, but there is no reason to allow it.)
+
+**Optional, Cloudflare Turnstile** instead of the built-in puzzle: create a Turnstile widget for your domain, then in Supabase → Edge Functions → Secrets add `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET`.
 
 ## Go-live checklist
 
-1. Owner signs in, changes PIN.
-2. Setup → Staff: rename each account to the real person, add or disable as needed.
+1. Owner signs in with username `owner` and their current PIN as the temporary password (or `0000`), chooses a password, sets up two-step sign-in and saves the backup codes.
+2. Setup → Staff: rename each account to the real person, set usernames, add or disable as needed.
 3. Setup → Houses: hens in each house, the start date and their age, expected lay rate from the breed guide.
 4. Setup → Prices & thresholds: tray prices, feed bag price and size, feed buffer, **tank size**.
 5. On go-live morning: Setup → **Opening balances**: physical egg counts at all 5 locations, cash at each, Till, Paybill and bank balances, feed in store, water in the tank, medicine stock.
-6. Each person signs in on their phone, changes PIN, and turns on phone notifications under My account.
+6. Each person signs in on their phone with their username and `0000`, chooses a password (the farm manager also sets up two-step sign-in), and turns on phone notifications under My account. Temporary passwords expire after 72 hours; the owner can reset them.
 
 ## Development
 
 ```bash
 npm install
-cp .env.example .env.local   # or use .env.production values
-npm run dev                  # http://localhost:5173
-npm test                     # dashboard arithmetic tests against exported real data
+cp .env.example .env.local   # fill in the three gateway values (never commit .env.local)
+npm run dev                  # http://localhost:5173, with the gateway at /api/gateway
+npm test                     # dashboard arithmetic, gateway and puzzle tests
 npm run build
 ```
 
@@ -88,13 +108,16 @@ Database tests run on a local Postgres (no Supabase needed):
 PGHOST=/tmp PGPORT=5433 PGUSER=postgres supabase/tests/run.sh
 ```
 
+Edge function unit tests (TOTP, password rules, breach check, puzzle): `deno test --allow-env --allow-net supabase/functions/tests/`
+
 `supabase/tests/02_demo_seed.sql` loads 30 days of realistic demo history into a **local** database for trying the screens. Never run it on the live project.
 
 ### Layout
 
 ```
 supabase/migrations/   schema, actions (rpc_*), reads + security, push
-supabase/functions/    pin-login, change-pin, staff-admin, push-notify (Deno)
+supabase/functions/    auth, staff-admin, push-notify (Deno); _shared: TOTP, password policy, puzzle
+api/gateway.ts         Vercel Edge Function: session cookies, CSRF checks, routing
 src/lib/metrics.ts     every dashboard figure, alert and the weekly report
 src/forms/forms.tsx    every data-entry form
 src/views/             screens per role
@@ -103,4 +126,4 @@ tests/                 unit tests + fixtures exported from the database
 
 ### Deploying function changes
 
-The functions import `../_shared/util.ts`. With the Supabase CLI: `supabase functions deploy <name> --no-verify-jwt` (the functions check sign-in themselves; `push-notify` is called by the database).
+The functions import `../_shared/*.ts`. With the Supabase CLI: `supabase functions deploy <name> --no-verify-jwt`. They refuse any call that does not carry the gateway secret (`push-notify` POST: the database trigger secret), and check the session themselves.

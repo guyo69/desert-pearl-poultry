@@ -1,11 +1,11 @@
 // Phone notifications (Web Push).
 //   GET                -> { public_key } for the app to subscribe with
 //   POST { id }        -> sends notification <id> to every subscribed phone of the people it is addressed to.
-// Called by a database trigger on new notifications. It only ever sends a
-// real notification once, and only within 5 minutes of it being created, so
-// calling it from outside cannot be used to spam staff.
+// POST is only accepted from the database trigger (x-dpv-trigger secret).
+// It sends each notification once, and only within 5 minutes of it being created.
+// GET returns the public VAPID key (public by design) and is fetched through the gateway.
 import webpush from 'npm:web-push@3.6.7';
-import { adminClient, cors, json, projectUrl, readJson, secret } from '../_shared/util.ts';
+import { adminClient, json, projectUrl, readJson, safeEqual, secret } from '../_shared/util.ts';
 
 async function vapid(db: ReturnType<typeof adminClient>) {
   let made: { publicKey: string; privateKey: string } | null = null;
@@ -16,10 +16,11 @@ async function vapid(db: ReturnType<typeof adminClient>) {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   const db = adminClient();
   const keys = await vapid(db);
   if (req.method === 'GET') return json({ public_key: keys.publicKey });
+  if (req.method !== 'POST') return json({ error: 'Use POST' }, 405);
+  if (!safeEqual(req.headers.get('x-dpv-trigger') ?? '', await secret(db, 'trigger_secret'))) return json({ error: 'Not found' }, 404);
 
   const { id } = await readJson(req);
   if (typeof id !== 'number') return json({ error: 'id required' }, 400);

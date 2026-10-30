@@ -9,7 +9,6 @@ export type Field =
   | { type: 'select'; id: string; label: string; options: [string, string][]; def?: string }
   | { type: 'text'; id: string; label: string; placeholder?: string; def?: string }
   | { type: 'date'; id: string; label: string; def?: string }
-  | { type: 'pin'; id: string; label: string }
   | { type: 'pair'; fields: Field[] }
   | { type: 'note'; text: ReactNode };
 
@@ -39,7 +38,6 @@ function initial(fields: Field[], v: V = {}): V {
     else if (f.type === 'eggs' || f.type === 'num') v[f.id] = f.def ?? '';
     else if (f.type === 'select') v[f.id] = f.def ?? f.options[0]?.[0] ?? '';
     else if (f.type === 'text' || f.type === 'date') v[f.id] = f.def ?? '';
-    else if (f.type === 'pin') v[f.id] = '';
   }
   return v;
 }
@@ -88,9 +86,6 @@ function FieldView({ f, v, set }: { f: Field; v: V; set: (p: V) => void }) {
     case 'date': return (
       <label className="fld"><span>{f.label}</span>
         <div className="inp"><input id={`f_${f.id}`} type="date" value={v[f.id]} onChange={(e) => set({ [f.id]: e.target.value })} /></div></label>);
-    case 'pin': return (
-      <label className="fld"><span>{f.label}</span>
-        <div className="inp"><input id={`f_${f.id}`} type="password" inputMode="numeric" autoComplete="off" maxLength={6} value={v[f.id]} onChange={(e) => set({ [f.id]: e.target.value.replace(/\D/g, '') })} /></div></label>);
   }
 }
 
