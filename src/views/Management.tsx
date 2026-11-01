@@ -8,6 +8,8 @@ import type { Dashboard } from '../lib/types';
 import { feedInForm, moveForm, receiveForm, tankForm, expenseForm } from '../forms/forms';
 import { Icon } from '../ui/icons';
 import { useUI } from '../ui/ui';
+import { useEffect, useState } from 'react';
+import { loadWeeklyReport, type WeeklyInsight, type WeeklyReport } from '../lib/api';
 import { AlertList, BarList, Card, Delta, Empty, FeedCard, Kpi, LocDot, TankCard, sevClass, sevVar } from '../ui/widgets';
 import { HouseLayChart, PayChart, ProductionChart, SalesChart, WaterChart, houseColor } from './charts';
 import { NoticeList } from './common';
@@ -150,14 +152,31 @@ export function Money({ D }: ViewProps) {
   </>;
 }
 
-export function Report({ D }: ViewProps) {
+const SEV: Record<string, 'red' | 'orange' | 'amber' | 'ok'> = { red: 'red', orange: 'orange', amber: 'amber' };
+const KIND: Record<string, string> = {
+  completeness: 'Missing entries', baseline: 'No comparison yet', lay_rate: 'Lay rate', feed_buffer: 'Feed in store', water_feed: 'Water and feed',
+  sales_pattern: 'Sales', count_variance: 'Stock count off the book', damaged_collection: 'Damaged at collection', damaged_outlet: 'Damaged at the outlet',
+  damaged_transit: 'Damaged on the way', transit: 'Deliveries not received', cash_variance: 'Cash count', unbanked: 'Cash not banked',
+};
+const insightTitle = (x: WeeklyInsight) => {
+  const k = KIND[x.kind] ?? 'This week';
+  return /^[A-Z]/.test(x.where) && x.where !== 'Central Farm' || x.kind === 'lay_rate' ? `${k} · ${x.where}` : k;
+};
+
+export function Report({ D, version }: ViewProps) {
   const I = intelligence(D), a = I.a, b = I.b;
+  const [R, setR] = useState<WeeklyReport | null>(null);
+  const [err, setErr] = useState('');
+  useEffect(() => { loadWeeklyReport().then((r) => { setR(r); setErr(''); }).catch((e) => setErr(e instanceof Error ? e.message : 'Could not load the report.')); }, [version]);
+  // a comparison is shown only when the week before was entered well enough to be fair
+  const cmp = !!R?.baseline.comparable;
+  const prev = (v: string) => (cmp ? v : '–');
   const rows: [string, string, string, number, number, boolean | null, boolean?][] = [
     ['Eggs collected', `${n0(a.eggs / 30)} tr`, `${n0(b.eggs / 30)} tr`, a.eggs, b.eggs, false],
-    ['Lay rate', pct(a.lay), pct(b.lay), a.lay, b.lay, false, true],
+    ['Lay rate (days entered)', pct(a.lay), pct(b.lay), a.lay, b.lay, false, true],
     ['Cracked at collection', pct(a.cracked), pct(b.cracked), a.cracked, b.cracked, true, true],
     ['Feed used', `${n0(a.feed / D.settings.bag_kg)} bags`, `${n0(b.feed / D.settings.bag_kg)} bags`, a.feed, b.feed, null],
-    ['Feed per egg', `${n0(a.gpe)} g`, `${n0(b.gpe)} g`, a.gpe, b.gpe, true],
+    ['Feed per egg', Number.isFinite(a.gpe) ? `${n0(a.gpe)} g` : '–', Number.isFinite(b.gpe) ? `${n0(b.gpe)} g` : '–', a.gpe, b.gpe, true],
     ['Feed cost per tray', kes(a.costTray), kes(b.costTray), a.costTray, b.costTray, true],
     ['Water drunk', `${n0(a.water)} L`, `${n0(b.water)} L`, a.water, b.water, null],
     ['Water per kg of feed', Number.isFinite(a.ratio) ? `${a.ratio.toFixed(2)} L` : '–', Number.isFinite(b.ratio) ? `${b.ratio.toFixed(2)} L` : '–', a.ratio, b.ratio, null],
@@ -168,23 +187,30 @@ export function Report({ D }: ViewProps) {
     ['Cash count variance', kes(a.cv), kes(b.cv), a.cv, b.cv, null],
   ];
   const ol = I.outlets.slice().sort((p, q) => q.sales.value - p.sales.value);
+  const why = R && !cmp ? (R.baseline.reason === 'first_week' ? 'no full week before yet' : 'week before not fully entered') : 'last 7 days vs the 7 before';
   return <div className="rep" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-    <Card><div className="muted" style={{ fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 650 }}>Weekly intelligence report · {dshort(I.W1[0])} – {dshort(I.W1[6])}</div>
-      <h2 style={{ marginTop: 6 }}>Desert Pearl Ventures · Tuala Farm Fresh Eggs</h2><p className="lead">{I.lead}</p></Card>
-    <Card title="Scorecard" aside={<span className="muted">last 7 days vs the 7 before</span>}><div className="tblw"><table>
+    <Card><div className="muted" style={{ fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 650 }}>
+      Weekly intelligence report · {R ? R.period.label : `${dshort(I.W1[0])} – ${dshort(I.W1[6])}`}{R?.provisional ? ' · provisional' : ''}</div>
+      <h2 style={{ marginTop: 6 }}>Desert Pearl Ventures · Tuala Farm Fresh Eggs</h2>
+      {err ? <p className="lead">{err}</p> : !R ? <p className="muted">Working out this week…</p>
+        : R.insights.length ? R.insights.map((x, i) => <div className="finding" key={i}>
+            <span style={{ width: 4, borderRadius: 2, background: sevVar(SEV[x.severity] ?? 'ok'), gridRow: 'span 2' }} />
+            <b>{insightTitle(x)}</b><p>{x.text}</p></div>)
+        : <p className="lead">Nothing needs attention this week.</p>}
+      <p className="muted" style={{ fontSize: 12.5, margin: '10px 0 0' }}>The same points go out in Monday's email. Figures cover days that were entered; missing days are listed first.</p></Card>
+    <Card title="Scorecard" aside={<span className="muted">{why}</span>}><div className="tblw"><table>
       <thead><tr><th>Measure</th><th>Last 7 days</th><th>Week before</th><th>Change</th></tr></thead>
-      <tbody>{rows.map((r) => <tr key={r[0]}><td>{r[0]}</td><td><b>{r[1]}</b></td><td>{r[2]}</td><td>{r[5] === null ? <span className="muted">–</span> : <Delta a={r[3]} b={r[4]} invert={r[5]} pts={r[6]} />}</td></tr>)}</tbody></table></div></Card>
-    <Card title="Findings">{I.findings.map((f, i) => <div className="finding" key={i}><span style={{ width: 4, borderRadius: 2, background: sevVar(f.sev), gridRow: 'span 2' }} /><b>{f.title}</b><p>{f.text}</p></div>)}</Card>
+      <tbody>{rows.map((r) => <tr key={r[0]}><td>{r[0]}</td><td><b>{r[1]}</b></td><td>{prev(r[2])}</td><td>{r[5] === null || !cmp ? <span className="muted">–</span> : <Delta a={r[3]} b={r[4]} invert={r[5]} pts={r[6]} />}</td></tr>)}</tbody></table></div></Card>
     <div className="grid2">
       <Card title="Lay rate by house" aside={<span className="muted">dashed: expected</span>}><HouseLayChart D={D} /></Card>
-      <Card title="Sales by location" aside={<span className="muted">last 7 days · faint bar: week before</span>}>
-        <BarList format={kes} rows={I.outlets.slice().sort((p, q) => q.sales.value - p.sales.value).map((o) => ({ key: o.loc, label: <><LocDot id={o.loc} />{D.locations.find((l) => l.id === o.loc)?.short}</>,
-          value: o.sales.value, prev: o.prev, color: `--l-${o.loc.toLowerCase()}`, note: o.prev ? `${o.chg >= 0 ? '▲' : '▼'} ${Math.abs(o.chg * 100).toFixed(1)}% on the week before` : undefined }))} /></Card>
+      <Card title="Sales by location" aside={<span className="muted">last 7 days{cmp ? ' · faint bar: week before' : ''}</span>}>
+        <BarList format={kes} rows={ol.map((o) => ({ key: o.loc, label: <><LocDot id={o.loc} />{D.locations.find((l) => l.id === o.loc)?.short}</>,
+          value: o.sales.value, prev: cmp ? o.prev : undefined, color: `--l-${o.loc.toLowerCase()}`, note: cmp && o.prev ? `${o.chg >= 0 ? '▲' : '▼'} ${Math.abs(o.chg * 100).toFixed(1)}% on the week before` : undefined }))} /></Card>
     </div>
     <Card title="Sales point league"><div className="tblw"><table>
       <thead><tr><th>Location</th><th>Sales</th><th>Change</th><th>Share</th><th>Eggs sold</th><th>Breakage</th></tr></thead>
       <tbody>{ol.map((o) => <tr key={o.loc}><td><LocDot id={o.loc} />{D.locations.find((l) => l.id === o.loc)?.short}</td><td>{kes(o.sales.value)}</td>
-        <td>{o.prev ? <span className={o.chg >= 0 ? 'up' : 'down'}>{o.chg >= 0 ? '▲' : '▼'} {Math.abs(o.chg * 100).toFixed(1)}%</span> : '–'}</td>
+        <td>{cmp && o.prev ? <span className={o.chg >= 0 ? 'up' : 'down'}>{o.chg >= 0 ? '▲' : '▼'} {Math.abs(o.chg * 100).toFixed(1)}%</span> : '–'}</td>
         <td>{a.sales ? pct(o.sales.value / a.sales, 0) : '–'}</td><td>{eggs(o.sales.pcs)}</td><td>{pct(o.rate)}</td></tr>)}</tbody></table></div></Card>
     <Card title="Recommended actions">{I.actions.length ? <div className="tblw"><table className="actions-tbl">
       <thead><tr><th>Priority</th><th>Action</th><th>Who</th></tr></thead>
