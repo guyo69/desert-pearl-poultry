@@ -1,15 +1,16 @@
 // Staff accounts. Owner only, and only from a fully verified session
 // (password set, two-step sign-in passed). Called through the gateway.
 //   { action: 'list' }
-//   { action: 'create', username, display_name, role, location_id }   -> temporary password 0000 (72 h)
-//   { action: 'update', staff_id, username?, display_name?, role?, location_id?, active? }
+//   { action: 'create', username, display_name, role, location_id, email?, digest_enabled? }   -> temporary password 0000 (72 h)
+//   { action: 'update', staff_id, username?, display_name?, role?, location_id?, active?, email?, digest_enabled? }
+//     email: '' clears it. Only this function (owner only) reads or writes staff emails.
 //   { action: 'reset_password', staff_id }   -> temporary password 0000 (72 h), signed out everywhere
 //   { action: 'reset_mfa', staff_id }        -> two-step removed; owner/manager must set it up again
 //   { action: 'unlock', staff_id }           -> clears failed-attempt lockouts
 //   { action: 'sign_out', staff_id }         -> ends every session of that person
 //   { action: 'backup_list' } / { action: 'backup_now' } / { action: 'backup_url', name }  -> weekly backups
 import { TEMP_PASSWORD, adminClient, caller, clientIp, clientUa, derivedPassword, fromGateway, json, readJson, str } from '../_shared/util.ts';
-import { ROLES, USERNAME, createStaff } from '../_shared/staff.ts';
+import { ROLES, USERNAME, createStaff, emailOf } from '../_shared/staff.ts';
 import { downloadUrl, listBackups, runBackup } from '../_shared/backup.ts';
 
 function checkShape(role: unknown, location_id: unknown): string | null {
@@ -41,7 +42,7 @@ Deno.serve(async (req) => {
 
     if (action === 'list') {
       const [{ data: staff, error }, { data: factors }, { data: counters }] = await Promise.all([
-        db.from('staff').select('id, username, display_name, role, location_id, active, must_change_password, temp_expires_at, password_changed_at, created_at').order('created_at'),
+        db.from('staff').select('id, username, display_name, role, location_id, active, must_change_password, temp_expires_at, password_changed_at, created_at, email, digest_enabled, digest_opted_out_at').order('created_at'),
         db.from('mfa_factors').select('staff_id, confirmed_at'),
         db.from('auth_counters').select('key, locked_until').gt('locked_until', new Date().toISOString()),
       ]);
@@ -75,8 +76,13 @@ Deno.serve(async (req) => {
       if (!USERNAME.test(username)) return json({ error: 'Username: 3 to 32 lowercase letters, numbers, dots or dashes.' }, 400);
       const bad = checkShape(role, location_id);
       if (bad) return json({ error: bad }, 400);
+      let email: string | null | undefined;
+      try { email = emailOf(body.email); } catch (x) { return json({ error: (x as Error).message }, 400); }
       const id = await createStaff(db, { username, display_name, role, location_id });
-      await log(true, `created ${username} (${role})`, id);
+      if (email || body.digest_enabled === false) {
+        await db.from('staff').update({ email: email ?? null, digest_enabled: body.digest_enabled !== false }).eq('id', id);
+      }
+      await log(true, `created ${username} (${role})${email ? ', email set' : ''}`, id);
       return json({ ok: true, id, temporary_password: TEMP_PASSWORD });
     }
 
@@ -125,15 +131,23 @@ Deno.serve(async (req) => {
       if (staff_id === me.uid && (!active || role !== 'owner')) return json({ error: 'You cannot remove your own owner access.' }, 400);
       const username = str(body.username, 40).trim().toLowerCase() || target.username;
       if (!USERNAME.test(username)) return json({ error: 'Username: 3 to 32 lowercase letters, numbers, dots or dashes.' }, 400);
+      let email: string | null | undefined;
+      try { email = emailOf(body.email); } catch (x) { return json({ error: (x as Error).message }, 400); }
+      const digest = typeof body.digest_enabled === 'boolean' ? body.digest_enabled : target.digest_enabled;
       const { error } = await db.from('staff').update({
         username,
         display_name: str(body.display_name, 80).trim() || target.display_name,
         role, location_id, active,
+        ...(email !== undefined ? { email } : {}),
+        digest_enabled: digest,
+        ...(digest && !target.digest_enabled ? { digest_opted_out_at: null } : {}),
       }).eq('id', staff_id);
       if (error) return json({ error: error.code === '23505' ? 'That username is taken.' : error.message }, 400);
       // a disabled account, or one whose role changed, is signed out at once
       if (!active || role !== target.role || location_id !== target.location_id) await db.rpc('auth_end_sessions', { p_uid: staff_id });
-      await log(true, `updated${!active && target.active ? ', disabled' : ''}${role !== target.role ? `, role ${target.role}→${role}` : ''}`, target.username);
+      const mail = email === undefined || email === target.email ? '' : email ? ', email set' : ', email cleared';
+      const dig = digest === target.digest_enabled ? '' : digest ? ', digest on' : ', digest off';
+      await log(true, `updated${!active && target.active ? ', disabled' : ''}${role !== target.role ? `, role ${target.role}→${role}` : ''}${mail}${dig}`, target.username);
       return json({ ok: true });
     }
 

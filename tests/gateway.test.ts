@@ -159,3 +159,51 @@ describe('data calls', () => {
     expect(r.status).toBe(413);
   });
 });
+
+describe('one-click opt-out link (no sign-in, no X-DPV)', () => {
+  const S = '0b5d8c9e-1f2a-4b3c-8d4e-5f6a7b8c9d0e', T = `v1.${'a'.repeat(64)}`;
+  const link = (s = S, t = T) => `${ORIGIN}/api/gateway?r=optout&s=${s}&t=${t}`;
+
+  it('GET only shows a confirm button, so a mail scanner opening the link changes nothing', async () => {
+    const r = await handler(new Request(link(), { method: 'GET' }));
+    expect(r.status).toBe(200);
+    expect(r.headers.get('content-type')).toMatch(/text\/html/);
+    const html = await r.text();
+    expect(html).toContain('method="post"');
+    expect(html).toContain(`s=${S}`);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('POST (the button, or a mail app\'s RFC 8058 one-click) forwards with the gateway secret and the client IP', async () => {
+    upstream = () => ok({ ok: true, name: 'Jane' });
+    const r = await handler(new Request(link(), { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-real-ip': '41.90.1.9' },
+                                                  body: 'List-Unsubscribe=One-Click' }));
+    expect(r.status).toBe(200);
+    expect(await r.text()).toContain('Emails stopped');
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe('https://proj.supabase.co/functions/v1/digest-optout');
+    expect(hdr(calls[0], 'x-dpv-gateway')).toBe('gw-secret');
+    expect(hdr(calls[0], 'x-dpv-client-ip')).toBe('41.90.1.9');
+    expect(hdr(calls[0], 'Authorization')).toBeUndefined();
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({ staff: S, token: T });
+  });
+
+  it('refuses malformed links without calling Supabase, and passes on a refused token', async () => {
+    for (const [s, t] of [['x', T], [S, 'v1.zz'], [S, 'a'.repeat(64)], [`${S}'`, T]]) {
+      const r = await handler(new Request(link(s, t), { method: 'POST', body: '' }));
+      expect(r.status, `${s} ${t}`).toBe(400);
+    }
+    expect(calls).toHaveLength(0);
+    upstream = () => ok({ error: 'This link is not valid.' }, 400);
+    const r = await handler(new Request(link(), { method: 'POST', body: '' }));
+    expect(r.status).toBe(400);
+    expect(await r.text()).toContain('not valid');
+  });
+
+  it('never sets or reads session cookies', async () => {
+    upstream = () => ok({ ok: true });
+    const r = await handler(new Request(link(), { method: 'POST', headers: { cookie: '__Host-dpv_at=abc' }, body: '' }));
+    expect(setCookies(r)).toHaveLength(0);
+    expect(hdr(calls[0], 'Authorization')).toBeUndefined();
+  });
+});

@@ -11,3 +11,4 @@ $P -d dpv_test -f supabase/tests/01_flows.sql
 $P -d dpv_test -f supabase/tests/03_auth.sql
 $P -d dpv_test -f supabase/tests/04_farm_changes.sql
 $P -d dpv_test -f supabase/tests/05_grades_sheets.sql
+$P -d dpv_test -f supabase/tests/06_staff_email.sql

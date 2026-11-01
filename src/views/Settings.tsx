@@ -83,7 +83,7 @@ function Staff({ D }: ViewProps) {
   const manage = (s: StaffAdminRow) => {
     const locked = s.locked_until && new Date(s.locked_until) > new Date();
     ui.openPanel(s.display_name, <div className="list">
-      <div className="li"><div className="mid"><b>Edit name, username, role or access</b><small>Disabling an account signs it out at once.</small></div><button className="btn sm alt" onClick={() => ui.openForm(staffForm(D, s))}>Edit</button></div>
+      <div className="li"><div className="mid"><b>Edit name, username, role, access or email</b><small>Disabling an account signs it out at once. Only owners see email addresses.</small></div><button className="btn sm alt" onClick={() => ui.openForm(staffForm(D, s))}>Edit</button></div>
       {s.id !== D.me.id && <div className="li"><div className="mid"><b>Reset password</b><small>Temporary password 0000 for 72 hours; they choose a new one. Signs them out everywhere.</small></div>
         <button className="btn sm alt" onClick={run(s, 'reset_password', `${s.display_name} can sign in with 0000 for 72 hours and must choose a new password.`, `Reset ${s.display_name}'s password to the temporary 0000?`)}>Reset</button></div>}
       {s.id !== D.me.id && s.mfa_enabled && <div className="li"><div className="mid"><b>Reset two-step sign-in</b><small>For a lost phone. {s.mfa_required ? 'They must set it up again at their next sign-in.' : ''}</small></div>
@@ -103,7 +103,9 @@ function Staff({ D }: ViewProps) {
             {locked && <span className="chip sev-red">Locked</span>}
             {s.must_change_password && <span className={`chip ${tempOver ? 'sev-red' : 'sev-amber'}`}>{tempOver ? 'Temporary password expired' : 'Temporary password'}</span>}
             {s.mfa_enabled ? <span className="chip sev-ok">Two-step on</span> : <span className={`chip ${s.mfa_required ? 'sev-red' : ''}`}>{s.mfa_required ? 'Two-step not set up' : 'Two-step off'}</span>}
-          </div></div>
+            {!s.email ? <span className="chip">No email</span> : s.digest_enabled ? <span className="chip sev-ok">Digest on</span>
+              : <span className="chip sev-amber">{s.digest_opted_out_at ? 'Opted out of emails' : 'Digest off'}</span>}
+          </div>{s.email && <small>{s.email}</small>}</div>
         <div className="end"><button className="act" onClick={() => manage(s)}>Manage</button></div></div>; })}</div>}
     <p className="muted small" style={{ marginTop: 10 }}>Five failed sign-ins lock an account for 15 minutes, longer each time it happens again. Two-step sign-in is optional, but recommended for the owner and farm manager.</p></Card>;
 }
