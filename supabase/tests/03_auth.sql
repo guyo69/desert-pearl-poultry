@@ -98,7 +98,7 @@ grant select on t_s to authenticated;
 set role authenticated;
 select t_claims('00000000-0000-0000-0000-000000000002', (select id from t_s));
 select t_err($$select dashboard(30)$$, 'AUTH_MFA');
-select t_err($$select rpc_collect('A', 1)$$, 'AUTH_MFA');
+select t_err($$select rpc_collect_eggs('A', 1, 0, 0, 0, 0)$$, 'AUTH_MFA');
 select t_err($$select * from activity(5)$$, 'AUTH_MFA');
 do $$ begin
   assert (select count(*) from sales) = 0, 'restricted session sees no sales';

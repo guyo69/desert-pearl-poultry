@@ -44,6 +44,8 @@ export const staffAdmin = <T = any>(body: Record<string, unknown>) => call<T>('a
 export const pushKey = () => call<{ public_key: string }>('push-key', undefined, 'GET');
 
 export const loadDashboard = (days = 90) => rpc<Dashboard>('dashboard', { p_days: days });
+/** A few bytes: the change counter and the business day. The dashboard is fetched only when they move. */
+export const dataVersion = () => rpc<{ v: number; day: string }>('data_version');
 export const loadActivity = (p: { limit?: number; before?: string | null; loc?: string | null; kind?: string | null }) =>
   rpc<ActivityRow[]>('activity', { p_limit: p.limit ?? 60, p_before: p.before ?? null, p_loc: p.loc ?? null, p_kind: p.kind ?? null });
 

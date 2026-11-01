@@ -1,11 +1,12 @@
 // Shapes returned by the `dashboard` database function.
 export type Role = 'owner' | 'manager' | 'clerk' | 'pos';
-export type Item = 'N' | 'C' | 'J';
-export interface Q { n: number; c: number; j: number }
+/** Egg grades: N normal, B big, C cracked (sellable), J jumbo / double yolk. Damaged eggs never enter stock. */
+export type Item = 'N' | 'B' | 'C' | 'J';
+export interface Q { n: number; b: number; c: number; j: number }
 
 export interface Settings {
-  tray_n: number; pc_n: number; tray_c: number; pc_c: number; pc_j: number;
-  feed_buffer_kg: number; bag_kg: number; bag_price: number;
+  tray_n: number; pc_n: number; tray_b: number; pc_b: number; tray_c: number; pc_c: number; pc_j: number;
+  feed_buffer_kg: number; feed_buffer_bags: number; bag_kg: number; bag_price: number;
   tank_capacity_l: number; water_drop_pct: number; water_ratio_min: number; water_ratio_max: number;
   cash_tol: number; unbanked_max: number; break_tol: number; lay_drop_pts: number;
   timezone: string; go_live: string | null;
@@ -21,29 +22,29 @@ export interface StaffLite { id: string; display_name: string; role: Role; locat
 export interface StaffAdminRow extends StaffLite { username: string; must_change_password: boolean; temp_expires_at: string | null; password_changed_at: string | null; mfa_enabled: boolean; mfa_required: boolean; locked_until: string | null; created_at: string }
 export interface Me { id: string; display_name: string; role: Role; location_id: string | null; username: string; password_changed_at: string | null; mfa_enabled: boolean; mfa_required: boolean; backup_codes_left: number }
 
-export type StockKind = 'coll' | 'out' | 'recv' | 'sold' | 'brk' | 'adj';
+export type StockKind = 'coll' | 'out' | 'recv' | 'sold' | 'brk' | 'adj' | 'issue';
 export interface StockRow extends Q { location_id: string }
 export interface StockDaily extends Q { location_id: string; d: string; kind: StockKind }
 export interface Balance { account_id: string; balance: number }
 export type MoneyKind = 'sale' | 'move_in' | 'move_out' | 'fee' | 'expense' | 'variance' | 'opening';
 export interface MoneyDaily { account_id: string; d: string; kind: MoneyKind; amount: number }
-export interface SalesDaily extends Q { location_id: string; d: string; cnt: number; value: number; cash: number; till: number; paybill: number }
+export interface SalesDaily extends Q { location_id: string; d: string; cnt: number; value: number; list_value: number; cash: number; till: number; paybill: number; imported: boolean }
 export interface BreakageDaily { location_id: string; d: string; transit: boolean; qty: number }
 export interface ReceivedDaily { location_id: string; d: string; sent: number; recv: number }
-export interface FarmDaily extends Q { house_id: string; d: string; deaths: number; hens: number }
+export interface FarmDaily extends Q { house_id: string; d: string; dmg: number; deaths: number; hens: number }
 export interface FeedDaily { d: string; kind: 'in' | 'use' | 'adjust'; kg: number }
 export interface WaterDaily { d: string; house_id: string; litres: number }
 export interface Transfer {
   id: number; d: string; recorded_at: string; from_loc: string; to_loc: string;
-  sent_n: number; sent_c: number; sent_j: number; status: 'in_transit' | 'received'; note: string | null;
+  sent_n: number; sent_b: number; sent_c: number; sent_j: number; status: 'in_transit' | 'received'; note: string | null;
 }
-export interface StockCount { id: number; location_id: string; kind: 'open' | 'close' | 'opening_balance'; recorded_at: string; cnt_n: number; cnt_c: number; cnt_j: number; adj_n: number; adj_c: number; adj_j: number }
+export interface StockCount { id: number; location_id: string; kind: 'open' | 'close' | 'opening_balance'; d: string; recorded_at: string; cnt_n: number; cnt_b: number; cnt_c: number; cnt_j: number; adj_n: number; adj_b: number; adj_c: number; adj_j: number }
 export interface CashCount { id: number; location_id: string; counted: number; expected: number; diff: number; recorded_at: string }
 export interface Notice { id: number; created_at: string; sev: Sev; title: string; body: string; to_roles: Role[]; location_id: string | null; kind: string | null; read: boolean }
 export type Sev = 'red' | 'orange' | 'amber' | 'info';
 
 export interface Dashboard {
-  today: string; from: string; server_time: string;
+  today: string; from: string; server_time: string; version?: number;
   me: Me; settings: Settings;
   locations: Location[]; accounts: Account[]; houses: House[]; medicines: Medicine[]; schedule: ScheduleItem[]; staff: StaffLite[];
   stock: StockRow[]; stock_daily: StockDaily[];
@@ -56,7 +57,17 @@ export interface Dashboard {
 }
 
 export interface ActivityRow {
-  kind: 'collect' | 'mort' | 'feed' | 'water' | 'med' | 'xfer' | 'sale' | 'brk' | 'count' | 'money' | 'cash';
+  kind: 'collect' | 'mort' | 'feed' | 'water' | 'med' | 'xfer' | 'sale' | 'brk' | 'count' | 'issue' | 'money' | 'cash';
   id: number; d: string; recorded_at: string; by_name: string | null; by_role: Role | null;
   location_id: string | null; voided: boolean; data: Record<string, any>;
+}
+
+/** shop_day(): one line of the shop's daily book, filled in from the records. */
+export interface ShopDay {
+  date: string; location_id: string;
+  opening: Q; book_closing: Q;
+  received: Q & { dmg: number; count: number }; pending: number;
+  sent: Q; issued: Q; damaged: Q;
+  sales: Q & { value: number; cash: number; till: number; paybill: number; count: number };
+  counted: (Q & { kind: 'open' | 'close'; recorded_at: string }) | null;
 }

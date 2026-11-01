@@ -3,11 +3,15 @@
 import { addDays, daysBetween, dlabel, dshort, eggs, kes, n0, pct, range } from './format';
 import type { Dashboard, Item, Q, Role, Sev, StockKind } from './types';
 
-export const ITEMS: Item[] = ['N', 'C', 'J'];
-export const ITEM_NAME: Record<Item, string> = { N: 'Normal eggs', C: 'Cracked eggs', J: 'Jumbo eggs' };
-export const Z = (): Q => ({ n: 0, c: 0, j: 0 });
-export const tot = (q: Q) => q.n + q.c + q.j;
-const add = (a: Q, b: Q, k = 1): Q => ({ n: a.n + k * b.n, c: a.c + k * b.c, j: a.j + k * b.j });
+export const ITEMS: Item[] = ['N', 'B', 'J', 'C'];
+export const ITEM_NAME: Record<Item, string> = { N: 'Normal eggs', B: 'Big eggs', J: 'Jumbo / double yolk', C: 'Cracked (sellable)' };
+/** Grade keys in the order the paper books use. */
+export const GRADES = [['n', 'Normal'], ['b', 'Big'], ['j', 'Jumbo / double yolk'], ['c', 'Cracked (sellable)']] as const;
+export const Z = (): Q => ({ n: 0, b: 0, c: 0, j: 0 });
+export const tot = (q: Q) => q.n + (q.b ?? 0) + q.c + q.j;
+export const add = (a: Q, b: Q, k = 1): Q => ({ n: a.n + k * b.n, b: (a.b ?? 0) + k * (b.b ?? 0), c: a.c + k * b.c, j: a.j + k * b.j });
+/** "3 tr normal · 1 tr big · 5 jumbo · 12 cracked" */
+export const mix = (q: Q) => [q.n && `${eggs(q.n)} normal`, q.b && `${eggs(q.b)} big`, q.j && `${q.j} jumbo`, q.c && `${eggs(q.c)} cracked`].filter(Boolean).join(' · ') || 'none';
 const sum = <T,>(xs: T[], f: (x: T) => number) => xs.reduce((a, x) => a + (Number(f(x)) || 0), 0);
 
 /* ---------------- buffer bands (feed & water tank) ---------------- */
@@ -33,17 +37,17 @@ export const locColor = (id: string) => LOC_COLORS[id] ?? '--muted';
 /* ---------------- stock ---------------- */
 export function stockNow(D: Dashboard, loc: string): Q {
   const r = D.stock.find((s) => s.location_id === loc);
-  return r ? { n: r.n, c: r.c, j: r.j } : Z();
+  return r ? { n: r.n, b: r.b ?? 0, c: r.c, j: r.j } : Z();
 }
-export interface Ledger { open: Q; coll: Q; recv: Q; out: Q; sold: Q; brk: Q; adj: Q; close: Q }
+export interface Ledger { open: Q; coll: Q; recv: Q; out: Q; iss: Q; sold: Q; brk: Q; adj: Q; close: Q }
 /** Opening → closing stock sheet for one location and day. Moves out are returned as positive numbers. */
 export function dayLedger(D: Dashboard, loc: string, day: string): Ledger {
   const rows = D.stock_daily.filter((r) => r.location_id === loc);
   const after = rows.filter((r) => r.d >= day).reduce((a, r) => add(a, r), Z());
   const open = add(stockNow(D, loc), after, -1);
   const k = (kind: StockKind, sign = 1) => rows.filter((r) => r.d === day && r.kind === kind).reduce((a, r) => add(a, r, sign), Z());
-  const L = { open, coll: k('coll'), recv: k('recv'), out: k('out', -1), sold: k('sold', -1), brk: k('brk', -1), adj: k('adj') };
-  const close = add(add(add(add(add(add(L.open, L.coll), L.recv), L.out, -1), L.sold, -1), L.brk, -1), L.adj);
+  const L = { open, coll: k('coll'), recv: k('recv'), out: k('out', -1), iss: k('issue', -1), sold: k('sold', -1), brk: k('brk', -1), adj: k('adj') };
+  const close = add(add(add(add(add(add(add(L.open, L.coll), L.recv), L.out, -1), L.iss, -1), L.sold, -1), L.brk, -1), L.adj);
   return { ...L, close };
 }
 
@@ -62,11 +66,14 @@ export function salesOn(D: Dashboard, days: string[], loc?: string) {
   const set = new Set(days);
   const rows = D.sales_daily.filter((r) => set.has(r.d) && (!loc || r.location_id === loc));
   return { value: sum(rows, (r) => r.value), cash: sum(rows, (r) => r.cash), till: sum(rows, (r) => r.till), paybill: sum(rows, (r) => r.paybill),
-           cnt: sum(rows, (r) => r.cnt), pcs: sum(rows, (r) => r.n + r.c + r.j), q: { n: sum(rows, (r) => r.n), c: sum(rows, (r) => r.c), j: sum(rows, (r) => r.j) } };
+           list: sum(rows, (r) => r.list_value ?? r.value),
+           cnt: sum(rows, (r) => r.cnt), pcs: sum(rows, (r) => tot(r)), q: { n: sum(rows, (r) => r.n), b: sum(rows, (r) => r.b ?? 0), c: sum(rows, (r) => r.c), j: sum(rows, (r) => r.j) } };
 }
 export function priceOf(D: Dashboard, q: Q) {
   const s = D.settings;
-  return Math.round(Math.floor(q.n / 30) * s.tray_n + (q.n % 30) * s.pc_n + Math.floor(q.c / 30) * s.tray_c + (q.c % 30) * (s.pc_c ?? s.tray_c / 30) + q.j * s.pc_j);
+  const b = q.b ?? 0;
+  return Math.round(Math.floor(q.n / 30) * s.tray_n + (q.n % 30) * s.pc_n + Math.floor(b / 30) * (s.tray_b ?? 0) + (b % 30) * (s.pc_b ?? 0)
+    + Math.floor(q.c / 30) * s.tray_c + (q.c % 30) * (s.pc_c ?? s.tray_c / 30) + q.j * s.pc_j);
 }
 
 /* ---------------- feed ---------------- */
@@ -82,7 +89,8 @@ export function feedInfo(D: Dashboard) {
   const cover = stock / daily;
   const shortKg = Math.max(0, target - stock), bags = Math.ceil(shortKg / s.bag_kg);
   const toNone = Math.max(0, (stock - 0.25 * target) / daily);
-  return { stock, target, level, band: b, daily, cover, shortKg, bags, noneDate: addDays(D.today, Math.floor(toNone)), usedToday: feedUsed(D, [D.today]), estimated: used7 <= 0 };
+  return { stock, target, level, band: b, daily, cover, shortKg, bags, noneDate: addDays(D.today, Math.floor(toNone)), usedToday: feedUsed(D, [D.today]), estimated: used7 <= 0,
+           stockBags: stock / s.bag_kg, targetBags: s.feed_buffer_bags ?? target / s.bag_kg, dailyBags: daily / s.bag_kg };
 }
 /** Feed in store at the end of each day. */
 export function feedHistory(D: Dashboard, days: string[]) {
@@ -119,11 +127,18 @@ export function collected(D: Dashboard, days: string[], house?: string): Q {
   const set = new Set(days);
   return D.farm_daily.filter((r) => set.has(r.d) && (!house || r.house_id === house)).reduce((a, r) => add(a, r), Z());
 }
+/** Damaged / broken eggs found at collection: laid, but never in stock. */
+export function damagedAtFarm(D: Dashboard, days: string[], house?: string) {
+  const set = new Set(days);
+  return sum(D.farm_daily.filter((r) => set.has(r.d) && (!house || r.house_id === house)), (r) => r.dmg ?? 0);
+}
+/** Everything laid: stock grades plus damaged. */
+export const produced = (D: Dashboard, days: string[], house?: string) => tot(collected(D, days, house)) + damagedAtFarm(D, days, house);
 export function layRate(D: Dashboard, days: string[], house?: string) {
   const set = new Set(days);
   const rows = D.farm_daily.filter((r) => set.has(r.d) && (!house || r.house_id === house));
   const hens = sum(rows, (r) => r.hens);
-  return hens ? sum(rows, (r) => r.n + r.c + r.j) / hens : NaN;
+  return hens ? sum(rows, (r) => tot(r) + (r.dmg ?? 0)) / hens : NaN;
 }
 export function hensNow(D: Dashboard, house?: string) {
   return sum(D.houses.filter((h) => !house || h.id === house), (h) => {
@@ -143,7 +158,7 @@ export function outletLoss(D: Dashboard, days: string[]) {
   const set = new Set(days);
   return D.locations.map((l) => {
     const loss = sum(D.breakage_daily.filter((r) => r.location_id === l.id && set.has(r.d)), (r) => r.qty);
-    const base = l.id === 'FARM' ? tot(collected(D, days)) : sum(D.received_daily.filter((r) => r.location_id === l.id && set.has(r.d)), (r) => r.sent);
+    const base = l.id === 'FARM' ? produced(D, days) : sum(D.received_daily.filter((r) => r.location_id === l.id && set.has(r.d)), (r) => r.sent);
     return { loc: l.id, loss, base, rate: base ? loss / base : 0, sales: salesOn(D, days, l.id) };
   });
 }
@@ -160,7 +175,7 @@ export function alerts(D: Dashboard): Alert[] {
   const f = feedInfo(D);
   if (farmReady && f.level < 1) A.push({ sev: bandSev(f.band), icon: 'sack', to: ['owner', 'manager', 'clerk'],
     title: `Feed buffer: ${f.band.label} (${pct(f.level, 0)})`,
-    body: `${n0(f.stock)} kg in store against a ${n0(f.target)} kg weekly buffer. About ${f.cover.toFixed(1)} days left. Order ${f.bags} bag${f.bags === 1 ? '' : 's'} (${n0(f.bags * s.bag_kg)} kg).` });
+    body: `${n0(f.stockBags)} bags in store against a ${n0(f.targetBags)}-bag weekly buffer. About ${f.cover.toFixed(1)} days left. Order ${f.bags} bag${f.bags === 1 ? '' : 's'}.` });
   // water tank
   const t = tankInfo(D);
   if (t && t.level < 0.75) A.push({ sev: bandSev(t.band), icon: 'drop', to: ['owner', 'manager', 'clerk'],
@@ -191,7 +206,7 @@ export function alerts(D: Dashboard): Alert[] {
   }
   // deliveries and counts
   for (const x of D.transit) A.push({ sev: 'info', icon: 'truck', loc: x.to_loc, to: ['owner', 'manager', 'pos'],
-    title: `Delivery to ${locShort(D, x.to_loc)} not yet confirmed`, body: `${eggs(x.sent_n + x.sent_c + x.sent_j)} sent from ${locShort(D, x.from_loc)} on ${dlabel(x.d)}.` });
+    title: `Delivery to ${locShort(D, x.to_loc)} not yet confirmed`, body: `${eggs(x.sent_n + (x.sent_b ?? 0) + x.sent_c + x.sent_j)} sent from ${locShort(D, x.from_loc)} on ${dlabel(x.d)}.` });
   if (s.go_live) for (const l of D.locations) {
     if (!D.counts_today.some((c) => c.location_id === l.id && c.kind === 'open')) A.push({ sev: 'amber', icon: 'count', loc: l.id, to: ['owner', 'manager', 'pos'],
       title: `${l.name}: opening count not done`, body: 'Count the eggs on hand before selling.' });
@@ -218,7 +233,7 @@ export function alertsFor(D: Dashboard): Alert[] {
 
 /* ---------------- weekly intelligence ---------------- */
 export function weekMetrics(D: Dashboard, days: string[]) {
-  const col = collected(D, days), e = tot(col), feed = feedUsed(D, days), water = waterOn(D, days);
+  const col = collected(D, days), e = produced(D, days), feed = feedUsed(D, days), water = waterOn(D, days);
   const sales = salesOn(D, days);
   const set = new Set(days);
   const brk = sum(D.breakage_daily.filter((r) => set.has(r.d)), (r) => r.qty);
@@ -265,7 +280,7 @@ export function intelligence(D: Dashboard) {
     text: `Two weeks ago ${pct(worst.r0)}, last week ${pct(worst.r1)}, last three days ${pct(worst.r3)}. Expected for ${houseAge(D, worst.h)}-week hens is about ${pct(worst.h.expected_lay, 0)}.${worst.w.days >= 3 ? ` Water yesterday ${n0(worst.w.yesterday)} L against ${n0(worst.w.avg)} L average.` : ''}`,
   });
   findings.push({ sev: f.band.sev, title: `Feed buffer at ${pct(f.level, 0)} (${f.band.label})`,
-    text: `${n0(f.stock)} kg in store, using ${n0(f.daily)} kg a day.${f.bags ? ` Order ${f.bags} bags (${kes(f.bags * s.bag_price)}) by ${dlabel(addDays(D.today, Math.max(0, Math.floor(f.cover) - 2)))}.` : ''} Feed cost per tray is ${Number.isFinite(a.costTray) ? kes(a.costTray) : 'n/a'}${Number.isFinite(margin) ? `, leaving ${kes(margin)} per tray before labour and transport` : ''}.` });
+    text: `${n0(f.stockBags)} bags in store, using ${f.dailyBags.toFixed(1)} bags a day.${f.bags ? ` Order ${f.bags} bags (${kes(f.bags * s.bag_price)}) by ${dlabel(addDays(D.today, Math.max(0, Math.floor(f.cover) - 2)))}.` : ''} Feed cost per tray is ${Number.isFinite(a.costTray) ? kes(a.costTray) : 'n/a'}${Number.isFinite(margin) ? `, leaving ${kes(margin)} per tray before labour and transport` : ''}.` });
   findings.push({ sev: waterDrop.length ? 'orange' : t && t.level < 0.5 ? t.band.sev : 'ok', title: `Water: ${n0(a.water)} L drunk last week`,
     text: `${Number.isFinite(a.ratio) ? `${a.ratio.toFixed(2)} litres per kg of feed (normal ${s.water_ratio_min}–${s.water_ratio_max}). ` : ''}${Number.isFinite(a.waterPerBird) ? `${(a.waterPerBird * 1000).toFixed(0)} ml per bird per day. ` : ''}${t ? `Tank at ${pct(t.level, 0)}.` : 'No tank reading yet.'}` });
   if (brk) findings.push({ sev: brk.rate * 100 > s.break_tol ? 'amber' : 'ok', title: `${locName(D, brk.loc)} loses the most eggs`,

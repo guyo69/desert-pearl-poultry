@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { AUTH_EVENT, RELOAD_EVENT, authStatus, forgetLegacyStorage, loadDashboard, rpc, signOut as endSession, type AuthStatus } from './lib/api';
+import { AUTH_EVENT, RELOAD_EVENT, authStatus, dataVersion, forgetLegacyStorage, loadDashboard, rpc, signOut as endSession, type AuthStatus } from './lib/api';
 import { alertsFor } from './lib/metrics';
 import type { Dashboard, Role } from './lib/types';
 import { collectForm, saleForm } from './forms/forms';
@@ -92,29 +92,46 @@ export default function App() {
   return <Login setupNeeded={st.setup_needed} notice={notice || (st.state === 'temp_expired' ? 'Your temporary password expired. Ask the owner to reset it.' : '')} onDone={() => { setNotice(''); check(); }} />;
 }
 
+const POLL_MS = 60_000;        // ask "has anything changed?" once a minute while the app is on screen
+const MIN_GAP_MS = 120_000;    // and fetch the full dashboard at most every 2 minutes for other people's changes
+
 function Signed({ signOut }: { signOut: (everywhere?: boolean) => void }) {
   // farm data is kept in memory only: nothing is left on the device after sign-out
   const [D, setD] = useState<Dashboard | null>(null);
   const [err, setErr] = useState('');
   const [version, setVersion] = useState(0);
+  const seen = useRef<{ v: number; day: string; at: number }>({ v: -1, day: '', at: 0 });
+  const busy = useRef(false);
+  /** Fetch the full dashboard (after a save, or when the data changed). */
   const reload = useCallback(async () => {
+    if (busy.current) return;
+    busy.current = true;
     try {
       const d = await loadDashboard(90);
+      seen.current = { v: Number(d.version ?? -1), day: d.today, at: Date.now() };
       setD(d); setErr(''); setVersion((v) => v + 1);
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr((e as Error).message); } finally { busy.current = false; }
   }, []);
+  /** Cheap check: download the dashboard only if something changed since the last one. */
+  const check = useCallback(async (soon = false) => {
+    if (document.visibilityState !== 'visible') return;
+    try {
+      const x = await dataVersion();
+      const changed = Number(x.v) !== seen.current.v || x.day !== seen.current.day;
+      if (changed && (soon || x.day !== seen.current.day || Date.now() - seen.current.at >= MIN_GAP_MS)) await reload();
+    } catch (e) { setErr((e as Error).message); }
+  }, [reload]);
 
   useEffect(() => {
     reload();
-    // live updates: every 30 s while the app is on screen, and at once when it comes back
-    const every = window.setInterval(() => { if (document.visibilityState === 'visible') reload(); }, 30000);
-    const vis = () => { if (document.visibilityState === 'visible') reload(); };
+    const every = window.setInterval(() => check(), POLL_MS);
+    const vis = () => { if (document.visibilityState === 'visible') check(true); };
     document.addEventListener('visibilitychange', vis);
-    const msg = (e: MessageEvent) => { if (e.data?.type === 'refresh') reload(); };
+    const msg = (e: MessageEvent) => { if (e.data?.type === 'refresh') check(true); };
     navigator.serviceWorker?.addEventListener('message', msg);
     addEventListener(RELOAD_EVENT, reload);
     return () => { clearInterval(every); document.removeEventListener('visibilitychange', vis); navigator.serviceWorker?.removeEventListener('message', msg); removeEventListener(RELOAD_EVENT, reload); };
-  }, [reload]);
+  }, [reload, check]);
 
   const out = (everywhere = false) => { setD(null); signOut(everywhere); };
   if (!D) return <div className="center">{err ? <div className="card" style={{ maxWidth: 440 }}><h3>Cannot load the farm data</h3><p className="muted">{err}</p><div className="row-btns"><button className="btn" onClick={reload}>Try again</button><button className="btn alt" onClick={() => out()}>Sign out</button></div></div> : <div className="spinner" />}</div>;

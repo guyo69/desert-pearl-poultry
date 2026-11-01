@@ -10,3 +10,4 @@ for f in supabase/migrations/*.sql; do $P -d dpv_test -f "$f" >/dev/null 2>&1 ||
 $P -d dpv_test -f supabase/tests/01_flows.sql
 $P -d dpv_test -f supabase/tests/03_auth.sql
 $P -d dpv_test -f supabase/tests/04_farm_changes.sql
+$P -d dpv_test -f supabase/tests/05_grades_sheets.sql

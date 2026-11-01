@@ -1,13 +1,14 @@
 // Farm counter, van and shop screens. Each person sees only their own location.
 import { addDays, dlabel, eggs, kes, n0, range, timeOf } from '../lib/format';
-import { alertsFor, balance, cashDay, dayLedger, salesOn, stockNow, tot } from '../lib/metrics';
+import { alertsFor, balance, cashDay, dayLedger, mix, salesOn, stockNow, tot } from '../lib/metrics';
 import type { Q } from '../lib/types';
-import { breakageForm, cashCountForm, countForm, dispatchForm, expenseForm, moveForm, receiveForm, saleForm } from '../forms/forms';
+import { breakageForm, cashCountForm, countForm, dispatchForm, expenseForm, issueForm, moveForm, receiveForm, saleForm, shopDayForm } from '../forms/forms';
 import { Icon } from '../ui/icons';
 import { useUI } from '../ui/ui';
 import { AlertList, Card, Empty, Kpi, Legend, Tile } from '../ui/widgets';
 import { PayChart } from './charts';
 import { RecordList } from './common';
+import { ShopSteps } from './Journey';
 import type { ViewProps } from './Management';
 
 const myLoc = (p: ViewProps) => p.D.me.location_id!;
@@ -15,14 +16,13 @@ const myLoc = (p: ViewProps) => p.D.me.location_id!;
 export function PosToday(p: ViewProps) {
   const { D } = p, ui = useUI(), loc = myLoc(p), st = stockNow(D, loc), s = salesOn(D, [D.today], loc);
   const it = D.transit.filter((x) => x.to_loc === loc);
-  const opened = D.counts_today.some((c) => c.location_id === loc && c.kind === 'open');
   const closed = D.counts_today.some((c) => c.location_id === loc && c.kind === 'close');
   const A = alertsFor(D).filter((a) => !a.loc || a.loc === loc);
   const bar = (k: 'cash' | 'till' | 'paybill', c: string) => (s.value ? <span style={{ width: `${(s[k] / s.value) * 100}%`, background: `var(${c})` }} /> : null);
   return <>
-    {!opened && <div className="banner warn"><div><b>Start the day</b><p>Count the eggs on hand before selling.</p></div><button className="btn yolk" onClick={() => ui.openForm(countForm(D, loc, 'open'))}><Icon name="count" />Opening count</button></div>}
+    <ShopSteps D={D} loc={loc} />
     {it.map((x) => <div className="banner info" key={x.id}><div><b>Delivery on the way from {D.locations.find((l) => l.id === x.from_loc)?.short}</b>
-      <p>{eggs(x.sent_n)} normal{x.sent_c ? ` · ${x.sent_c} cracked` : ''}{x.sent_j ? ` · ${x.sent_j} jumbo` : ''} · sent {timeOf(x.recorded_at)}</p></div>
+      <p>{mix({ n: x.sent_n, b: x.sent_b ?? 0, c: x.sent_c, j: x.sent_j })} · sent {timeOf(x.recorded_at)}</p></div>
       <button className="btn" onClick={() => ui.openForm(receiveForm(D, x))}><Icon name="inbox" />Receive</button></div>)}
     <div className="kpis">
       <Kpi label="Sales today" value={kes(s.value)} sub={`${s.cnt} sale${s.cnt === 1 ? '' : 's'}`} />
@@ -36,7 +36,9 @@ export function PosToday(p: ViewProps) {
     <div className="tiles">
       <Tile icon="receipt" label="Record sale" color="--l-farm" onClick={() => ui.openForm(saleForm(D, loc))} />
       <Tile icon="inbox" label="Receive stock" color="--info" onClick={() => it[0] ? ui.openForm(receiveForm(D, it[0])) : ui.toast('No deliveries waiting for you.')} />
-      <Tile icon="crack" label="Breakage" color="--f-none" onClick={() => ui.openForm(breakageForm(D, loc))} />
+      <Tile icon="truck" label="Issue eggs out" color="--l-tuala" onClick={() => ui.openForm(issueForm(D, loc))} />
+      <Tile icon="crack" label="Damaged eggs" color="--f-none" onClick={() => ui.openForm(breakageForm(D, loc))} />
+      <Tile icon="list" label="Daily stock sheet" color="--l-rayan" onClick={() => ui.openForm(shopDayForm(D, loc))} />
       <Tile icon="wallet" label="Expense" color="--l-lucky" onClick={() => ui.openForm(expenseForm(D, loc, false))} />
       <Tile icon="swap" label="Move money" color="--l-rayan" onClick={() => ui.openForm(moveForm(D, loc))} />
       <Tile icon="count" label={closed ? 'Closed ✓' : 'Close the day'} color="--l-van" onClick={() => ui.openForm(countForm(D, loc, 'close'))} />
@@ -48,19 +50,21 @@ export function PosToday(p: ViewProps) {
 
 export function PosStock(p: ViewProps) {
   const { D } = p, ui = useUI(), loc = myLoc(p), L = dayLedger(D, loc, D.today);
-  const row = (label: string, q: Q, sign = '') => <tr><td>{label}</td>{(['n', 'c', 'j'] as const).map((k) => <td key={k}>{q[k] ? `${sign}${k === 'n' ? eggs(q[k]) : `${q[k]} pc`}` : '–'}</td>)}</tr>;
+  const row = (label: string, q: Q, sign = '') => <tr><td>{label}</td>{(['n', 'b', 'j', 'c'] as const).map((k) => <td key={k}>{q[k] ? `${sign}${k === 'j' ? `${q[k]} pc` : eggs(q[k])}` : '–'}</td>)}</tr>;
   return <>
     <Card title="Today's stock sheet" aside={<span className="muted">{D.locations.find((l) => l.id === loc)?.name}</span>}>
-      <div className="tblw"><table><thead><tr><th></th><th>Normal</th><th>Cracked</th><th>Jumbo</th></tr></thead>
-        <tbody>{row('Opening', L.open)}{loc === 'FARM' && row('+ Collected', L.coll, '+')}{row('+ Received', L.recv, '+')}{row('− Sent out', L.out, '−')}{row('− Sold', L.sold, '−')}{row('− Broken', L.brk, '−')}{row('± Count variance', L.adj)}</tbody>
+      <div className="tblw"><table><thead><tr><th></th><th>Normal</th><th>Big</th><th>Jumbo</th><th>Cracked</th></tr></thead>
+        <tbody>{row('Opening', L.open)}{loc === 'FARM' && row('+ Collected', L.coll, '+')}{row('+ Received', L.recv, '+')}{row('− Sent out', L.out, '−')}{row('− Issued', L.iss, '−')}{row('− Sold', L.sold, '−')}{row('− Damaged', L.brk, '−')}{row('± Count variance', L.adj)}</tbody>
         <tfoot>{row('On hand (expected)', L.close)}</tfoot></table></div>
       <div className="row-btns" style={{ marginTop: 12 }}><button className="btn sm alt" onClick={() => ui.openForm(countForm(D, loc, 'open'))}><Icon name="count" />Opening count</button>
         <button className="btn sm" onClick={() => ui.openForm(countForm(D, loc, 'close'))}><Icon name="count" />Close the day</button>
-        {loc !== 'FARM' && <button className="btn sm alt" onClick={() => ui.openForm(dispatchForm(D, loc))}><Icon name="truck" />Send eggs</button>}</div></Card>
+        {loc !== 'FARM' && <button className="btn sm alt" onClick={() => ui.openForm(dispatchForm(D, loc))}><Icon name="truck" />Send eggs</button>}
+        <button className="btn sm alt" onClick={() => ui.openForm(issueForm(D, loc))}><Icon name="truck" />Issue out</button>
+        <button className="btn sm alt" onClick={() => ui.openForm(shopDayForm(D, loc))}><Icon name="list" />Daily stock sheet</button></div></Card>
     <Card title="Last 7 days" aside={<span className="muted">pieces</span>}><div className="tblw"><table>
-      <thead><tr><th>Day</th><th>Opening</th><th>In</th><th>Sold</th><th>Broken</th><th>Closing</th></tr></thead>
+      <thead><tr><th>Day</th><th>Opening</th><th>In</th><th>Issued</th><th>Damaged</th><th>Sold</th><th>Closing</th></tr></thead>
       <tbody>{range(addDays(D.today, -6), D.today).reverse().map((d) => { const x = dayLedger(D, loc, d);
-        return <tr key={d}><td>{dlabel(d)}</td><td>{n0(tot(x.open))}</td><td>{n0(tot(x.recv) + tot(x.coll))}</td><td>{n0(tot(x.sold))}</td><td>{tot(x.brk) || '–'}</td><td>{n0(tot(x.close))}</td></tr>; })}</tbody></table></div></Card>
+        return <tr key={d}><td>{dlabel(d)}</td><td>{n0(tot(x.open))}</td><td>{n0(tot(x.recv) + tot(x.coll))}</td><td>{tot(x.iss) ? n0(tot(x.iss)) : '–'}</td><td>{tot(x.brk) || '–'}</td><td>{n0(tot(x.sold))}</td><td>{n0(tot(x.close))}</td></tr>; })}</tbody></table></div></Card>
   </>;
 }
 

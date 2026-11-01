@@ -136,8 +136,9 @@ function SecurityLog() {
 }
 
 const FIELDS: [keyof S, string, string][] = [
-  ['tray_n', 'Normal eggs, per tray of 30', 'KES'], ['pc_n', 'Normal eggs, loose', 'KES each'], ['tray_c', 'Cracked eggs, per tray', 'KES'], ['pc_c', 'Cracked eggs, loose', 'KES each'], ['pc_j', 'Jumbo eggs', 'KES each'],
-  ['feed_buffer_kg', 'Feed buffer (weekly need)', 'kg'], ['bag_kg', 'Feed bag size', 'kg'], ['bag_price', 'Feed price per bag', 'KES'],
+  ['tray_n', 'Normal eggs, per tray of 30', 'KES'], ['pc_n', 'Normal eggs, loose', 'KES each'], ['tray_b', 'Big eggs, per tray of 30', 'KES'], ['pc_b', 'Big eggs, loose', 'KES each'],
+  ['tray_c', 'Cracked eggs, per tray', 'KES'], ['pc_c', 'Cracked eggs, loose', 'KES each'], ['pc_j', 'Jumbo / double yolk', 'KES each'],
+  ['feed_buffer_bags', 'Feed buffer (weekly need)', 'bags'], ['bag_kg', 'Feed bag size', 'kg'], ['bag_price', 'Feed price per bag', 'KES'],
   ['tank_capacity_l', 'Water tank size', 'L'], ['water_drop_pct', 'Water drop alert', '%'], ['water_ratio_min', 'Water per kg feed, lowest normal', 'L'], ['water_ratio_max', 'Water per kg feed, highest normal', 'L'],
   ['unbanked_max', 'Unbanked cash limit', 'KES'], ['cash_tol', 'Cash variance alert', 'KES'], ['break_tol', 'Breakage tolerance', '%'], ['lay_drop_pts', 'Lay rate drop alert', 'points'],
 ];
@@ -163,6 +164,32 @@ function Houses({ D }: ViewProps) {
         <td><button className="btn sm alt" onClick={() => ui.openForm(houseForm(D, h))}>Edit</button></td></tr>)}</tbody></table></div> : <Empty>No houses yet.</Empty>}</Card>;
 }
 
+interface BackupFile { name: string; size: number; created_at: string }
+/** Weekly backups (Sunday night), kept for 12 weeks in private storage. Owner only. */
+function Backups() {
+  const ui = useUI();
+  const [list, setList] = useState<BackupFile[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => staffAdmin<{ backups: BackupFile[] }>({ action: 'backup_list' }).then((r) => setList(r.backups)).catch((e) => { setList([]); ui.toast(e.message); }), [ui]);
+  useEffect(() => { load(); }, [load]);
+  const now = async () => {
+    setBusy(true);
+    try { const r = await staffAdmin<{ rows: number; size: number }>({ action: 'backup_now' }); ui.toast(`Backup made: ${n0(r.rows)} records, ${Math.max(1, Math.round(r.size / 1024))} KB.`); load(); }
+    catch (e) { ui.toast((e as Error).message); } finally { setBusy(false); }
+  };
+  const get = async (name: string) => {
+    try { const r = await staffAdmin<{ url: string }>({ action: 'backup_url', name }); location.assign(r.url); } catch (e) { ui.toast((e as Error).message); }
+  };
+  return <Card title="Backups" aside={<button className="lnk" disabled={busy} onClick={now}>{busy ? 'Backing up…' : 'Back up now'}</button>}>
+    <p className="muted" style={{ margin: '0 0 10px', fontSize: 13.5 }}>Every Sunday at 23:00 the farm records are copied to private storage. The last 12 weeks are kept. Download one now and then and keep it off the phone too.</p>
+    {list === null ? <div className="spinner" /> : list.length ? <div className="list">{list.map((f) => <div className="li" key={f.name}>
+      <span className="av" style={{ background: 'var(--info)' }}><Icon name="box" /></span>
+      <div className="mid"><b>{when(f.created_at) || f.name}</b><small>{Math.max(1, Math.round(f.size / 1024))} KB</small></div>
+      <div className="end"><button className="act" onClick={() => get(f.name)}>Download</button></div></div>)}</div>
+      : <Empty>No backups yet. The first runs on Sunday night, or press Back up now.</Empty>}
+  </Card>;
+}
+
 export function Setup(p: ViewProps & { signOut: (everywhere?: boolean) => void }) {
   const { D, version } = p, ui = useUI();
   const [sec, setSec] = useState<'activity' | 'setup' | 'security'>('activity');
@@ -179,6 +206,7 @@ export function Setup(p: ViewProps & { signOut: (everywhere?: boolean) => void }
       <Houses {...p} />
       <Staff {...p} />
       <Thresholds {...p} />
+      <Backups />
       {D.settings.go_live && <Card title="Opening balances" aside={<span className="muted">went live {dnum(D.settings.go_live)}</span>}>
         <p className="muted" style={{ margin: '0 0 10px', fontSize: 14 }}>Re-entering counts adds a correction for the difference. Use the daily counts for routine checks.</p>
         <button className="btn sm alt" onClick={() => ui.openForm(openingForm(D))}>Re-enter opening balances</button></Card>}

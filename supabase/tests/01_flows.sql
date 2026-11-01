@@ -12,6 +12,8 @@ begin
   raise exception 'Expected an error (%) from: %', expect, q;
 end $$;
 grant execute on function public.t_err(text, text) to authenticated, anon;
+-- these flows were written for a 315 kg buffer (6.3 bags of 50 kg)
+update settings set feed_buffer_bags = 6.3, feed_buffer_kg = 315 where id = 1;
 
 -- act as a staff member, in their (fully verified) test session
 create function public.t_as(p uuid) returns void language sql security definer set search_path = public as $$
@@ -60,10 +62,10 @@ end $$;
 
 -- ---------- clerk ----------
 select t_as('00000000-0000-0000-0000-000000000003');
-select rpc_collect('A',180,6,2);
-select rpc_collect('B',120,4,4);
-select t_err($$select rpc_collect('A',0,0,0)$$, 'Enter the number');
-select t_err($$select rpc_sale('FARM',30,0,0,450,0,0)$$, 'not available to your role');
+select rpc_collect_eggs('A',180,0,2,6,0);
+select rpc_collect_eggs('B',120,0,4,4,0);
+select t_err($$select rpc_collect_eggs('A',0,0,0,0,0)$$, 'Enter the number');
+select t_err($$select rpc_record_sale('FARM',30,0,0,0,450,0,0)$$, 'not available to your role');
 -- 200 kg = 63% (watch). Using 50 kg -> 150 kg = 48% (low): band drop must notify
 do $$ declare r jsonb; begin
   r := rpc_feed('use', 50, 'Both', 'Morning feed');
@@ -80,10 +82,10 @@ end $$;
 select t_err($$select rpc_water('tank', 5000)$$, 'tank holds');
 select t_err($$select rpc_med(2,'use',5)$$, 'Only 2');
 select rpc_med(2,'use',1,'House A','Deworming');
-select rpc_dispatch('FARM','RAYAN',60,0,1);
-select rpc_dispatch('FARM','VAN',90,10,0);
-select t_err($$select rpc_dispatch('FARM','TUALA',9999)$$, 'Only');
-select t_err($$select rpc_dispatch('VAN','TUALA',30)$$, 'own location');
+select rpc_dispatch_many('FARM','[{"to":"RAYAN","n":60,"j":1}]');
+select rpc_dispatch_many('FARM','[{"to":"VAN","n":90,"c":10}]');
+select t_err($$select rpc_dispatch_many('FARM','[{"to":"TUALA","n":9999}]')$$, 'Only');
+select t_err($$select rpc_dispatch_many('VAN','[{"to":"TUALA","n":30}]')$$, 'own location');
 do $$ begin assert (select n from v_stock where location_id='FARM') = 300+180+120-60-90, 'farm stock after dispatch'; end $$;
 
 -- ---------- Rayan Fedha attendant ----------
@@ -93,19 +95,19 @@ do $$ begin
   assert (select count(*) from transfers) = 1, 'shop sees only its own deliveries';
   assert (select count(*) from notifications) = 1, 'shop sees its delivery notice only';
 end $$;
-select rpc_receive((select id from transfers where to_loc='RAYAN'), 58, 0, 1);
+select rpc_receive_delivery((select id from transfers where to_loc='RAYAN'), 58, 0, 1, 0, 0);
 do $$ begin
   assert (select n from v_stock where location_id='RAYAN') = 58, 'received stock';
   assert (select qty from breakages where location_id='RAYAN' and transit) = 2, 'transit breakage logged';
 end $$;
-select t_err($$select rpc_receive((select id from transfers where to_loc='RAYAN'), 58)$$, 'already received');
-select rpc_stock_count('RAYAN','open',58,0,1);
-select t_err($$select rpc_sale('RAYAN',30,0,0,400,0,0)$$, 'must equal');
-select t_err($$select rpc_sale('TUALA',30,0,0,450,0,0)$$, 'own location');
-select t_err($$select rpc_sale('RAYAN',90,0,0,1350,0,0)$$, 'Only 1 tr');
+select t_err($$select rpc_receive_delivery((select id from transfers where to_loc='RAYAN'), 58, 0, 1, 0)$$, 'already received');
+select rpc_count_stock('RAYAN','open',58,0,1,0);
+select t_err($$select rpc_record_sale('RAYAN',30,0,0,0,400,0,0)$$, 'must equal');
+select t_err($$select rpc_record_sale('TUALA',30,0,0,0,450,0,0)$$, 'own location');
+select t_err($$select rpc_record_sale('RAYAN',90,0,0,0,1350,0,0)$$, 'Only 1 tr');
 -- 1 tray + 2 loose + 1 jumbo = 450 + 32 + 20 = 502
 do $$ declare r jsonb; begin
-  r := rpc_sale('RAYAN',32,0,1,200,302,0);
+  r := rpc_record_sale('RAYAN',32,0,1,0,200,302,0);
   assert (r->>'value')::numeric = 502, 'price: ' || r::text;
 end $$;
 select rpc_move_money('CASH:RAYAN','BANK',1000,0,'DEP123');
@@ -118,23 +120,23 @@ select t_err($$select rpc_expense('BANK',50,'Other')$$, 'management');
 -- expected cash = 2000 + 200 - 1000 + 500 - 50 = 1650; count 1600 -> short 50
 do $$ declare r jsonb; begin
   assert (select balance from v_balances where account_id='CASH:RAYAN') = 1650, 'expected cash';
-  r := rpc_close_day('RAYAN', 26, 0, 0, 1600);
-  assert (r->>'diff')::numeric = -50, 'cash diff ' || r::text;
-  assert (r->>'adj_n')::int = 0, 'stock matched';
+  r := rpc_shop_day('RAYAN', null, '{"closing":{"n":26},"cash_counted":1600}');
+  assert (r->'cash'->>'diff')::numeric = -50, 'cash diff ' || r::text;
+  assert (r->'closing'->>'adj_n')::int = 0, 'stock matched';
   assert (select balance from v_balances where account_id='CASH:RAYAN') = 1600, 'cash after count';
   assert (select count(*) from sales where location_id <> 'RAYAN') = 0, 'only own sales visible';
 end $$;
 
 -- ---------- van ----------
 select t_as('00000000-0000-0000-0000-000000000005');
-select rpc_receive((select id from transfers where to_loc='VAN'), 90, 10, 0);
+select rpc_receive_delivery((select id from transfers where to_loc='VAN'), 90, 0, 0, 10, 0);
 -- van delivers to a shop
-select rpc_dispatch('VAN','TUALA',30,0,0);
-select rpc_sale('VAN',30,10,0,0,0,550);
+select rpc_dispatch_many('VAN','[{"to":"TUALA","n":30}]');
+select rpc_record_sale('VAN',30,0,0,10,0,0,550);
 
 -- ---------- Tuala ----------
 select t_as('00000000-0000-0000-0000-000000000006');
-select rpc_receive((select id from transfers where to_loc='TUALA'), 30, 0, 0);
+select rpc_receive_delivery((select id from transfers where to_loc='TUALA'), 30, 0, 0, 0, 0);
 do $$ begin assert (select n from v_stock where location_id='TUALA') = 30, 'tuala stock from van'; end $$;
 
 -- ---------- anon ----------
@@ -171,8 +173,9 @@ do $$ begin
   assert (select balance from v_balances where account_id='CASH:RAYAN') = 1400, 'cash after void';
 end $$;
 select t_err($$select rpc_void('sale', (select id from sales where location_id='RAYAN'), 'again')$$, 'already corrected');
-select rpc_save_settings('{"feed_buffer_kg":2205,"tray_n":480}'::jsonb);
-do $$ begin assert (select feed_buffer_kg from settings) = 2205, 'settings'; end $$;
+select rpc_save_settings('{"feed_buffer_bags":315,"bag_kg":7,"tray_n":480}'::jsonb);
+do $$ begin assert (select feed_buffer_kg from settings) = 2205, 'settings: buffer kept in bags'; end $$;
+select rpc_save_settings('{"bag_kg":50}'::jsonb);
 
 -- ---------- manager ----------
 select t_as('00000000-0000-0000-0000-000000000002');

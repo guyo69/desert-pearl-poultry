@@ -7,8 +7,10 @@
 //   { action: 'reset_mfa', staff_id }        -> two-step removed; owner/manager must set it up again
 //   { action: 'unlock', staff_id }           -> clears failed-attempt lockouts
 //   { action: 'sign_out', staff_id }         -> ends every session of that person
+//   { action: 'backup_list' } / { action: 'backup_now' } / { action: 'backup_url', name }  -> weekly backups
 import { TEMP_PASSWORD, adminClient, caller, clientIp, clientUa, derivedPassword, fromGateway, json, readJson, str } from '../_shared/util.ts';
 import { ROLES, USERNAME, createStaff } from '../_shared/staff.ts';
+import { downloadUrl, listBackups, runBackup } from '../_shared/backup.ts';
 
 function checkShape(role: unknown, location_id: unknown): string | null {
   if (typeof role !== 'string' || !ROLES.includes(role)) return 'Choose a role.';
@@ -51,6 +53,18 @@ Deno.serve(async (req) => {
         ...s, mfa_enabled: (factors ?? []).some((f) => f.staff_id === s.id && f.confirmed_at),
         mfa_required: false, locked_until: locked(s),   // two-step is optional for every role
       })) });
+    }
+
+    if (action === 'backup_list') return json({ backups: await listBackups(db) });
+    if (action === 'backup_now') {
+      const r = await runBackup(db, me.staff.username);
+      await log(true, `backup ${r.name}: ${r.rows} records`);
+      return json({ ok: true, ...r });
+    }
+    if (action === 'backup_url') {
+      const url = await downloadUrl(db, str(body.name, 80));
+      await log(true, `backup downloaded ${str(body.name, 80)}`);
+      return json({ url });
     }
 
     if (action === 'create') {

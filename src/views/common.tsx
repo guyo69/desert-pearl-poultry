@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { loadActivity } from '../lib/api';
 import { dlabel, eggs, kes, n0, timeOf } from '../lib/format';
-import { accName, locShort } from '../lib/metrics';
+import { ITEM_NAME, accName, locShort, mix } from '../lib/metrics';
 import type { ActivityRow, Dashboard } from '../lib/types';
 import { voidForm } from '../forms/forms';
 import { Icon } from '../ui/icons';
@@ -13,13 +13,15 @@ const META: Record<ActivityRow['kind'], { icon: string; col: string }> = {
   collect: { icon: 'egg', col: '--l-van' }, feed: { icon: 'sack', col: '--f-low' }, water: { icon: 'drop', col: '--info' },
   med: { icon: 'syringe', col: '--l-rayan' }, mort: { icon: 'bird', col: '--muted' }, xfer: { icon: 'truck', col: '--l-tuala' },
   sale: { icon: 'receipt', col: '--l-farm' }, brk: { icon: 'crack', col: '--f-none' }, count: { icon: 'count', col: '--l-rayan' },
-  money: { icon: 'swap', col: '--l-lucky' }, cash: { icon: 'cash', col: '--l-lucky' },
+  money: { icon: 'swap', col: '--l-lucky' }, cash: { icon: 'cash', col: '--l-lucky' }, issue: { icon: 'truck', col: '--l-lucky' },
 };
+const q = (x: any, p = '') => ({ n: +x[`${p}n`] || 0, b: +x[`${p}b`] || 0, c: +x[`${p}c`] || 0, j: +x[`${p}j`] || 0 });
+const t4 = (v: { n: number; b: number; c: number; j: number }) => v.n + v.b + v.c + v.j;
 
 export function describe(D: Dashboard, r: ActivityRow): { title: string; sub: string; end: string } {
   const x = r.data, house = (id: string) => D.houses.find((h) => h.id === id)?.name ?? id;
   switch (r.kind) {
-    case 'collect': return { title: `${house(x.house_id)} collection`, sub: `${eggs(x.n)} normal · ${x.c} cracked · ${x.j} jumbo`, end: eggs(x.n + x.c + x.j) };
+    case 'collect': return { title: `${house(x.house_id)} collection`, sub: `${mix(q(x))}${+x.dmg ? ` · ${x.dmg} damaged` : ''}`, end: eggs(t4(q(x)) + (+x.dmg || 0)) };
     case 'mort': return { title: `Mortality · ${house(x.house_id)}`, sub: x.cause, end: `${x.birds} bird${x.birds > 1 ? 's' : ''}` };
     case 'feed': return x.kind === 'in' ? { title: `Feed received${x.bags ? ` · ${x.bags} bags` : ''}`, sub: x.cost ? kes(x.cost) : '', end: `+${n0(x.kg)} kg` }
       : x.kind === 'use' ? { title: `Feed used · ${x.note ?? ''}`, sub: x.house ?? '', end: `−${n0(x.kg)} kg` }
@@ -28,11 +30,12 @@ export function describe(D: Dashboard, r: ActivityRow): { title: string; sub: st
       : { title: `Water drunk · ${house(x.house_id)}`, sub: x.note ?? '', end: `${n0(x.litres)} L` };
     case 'med': return { title: x.medicine, sub: `${x.kind === 'in' ? 'Received' : x.kind === 'use' ? 'Used' : 'Adjusted'}${x.house ? ` · ${x.house}` : ''}${x.note ? ` · ${x.note}` : ''}`, end: `${x.kind === 'use' ? '−' : '+'}${n0(Math.abs(x.qty))} ${x.unit}` };
     case 'xfer': return { title: `${locShort(D, x.from_loc)} → ${locShort(D, x.to_loc)}`,
-      sub: x.status === 'received' ? `Received ${timeOf(x.received_at)}${x.recv_n + x.recv_c + x.recv_j < x.sent_n + x.sent_c + x.sent_j ? ` · ${eggs(x.sent_n + x.sent_c + x.sent_j - x.recv_n - x.recv_c - x.recv_j)} short` : ''}` : 'In transit',
-      end: eggs(x.sent_n + x.sent_c + x.sent_j) };
-    case 'sale': return { title: `Sale · ${eggs(x.n + x.c + x.j)}`, sub: `${locShort(D, x.location_id)} · ${[['cash', 'Cash'], ['till', 'Till'], ['paybill', 'Paybill']].filter(([k]) => +x[k]).map(([k, l]) => `${l} ${n0(+x[k])}`).join(' + ')}${x.customer ? ` · ${x.customer}` : ''}`, end: kes(+x.value) };
-    case 'brk': return { title: x.reason, sub: `${locShort(D, x.location_id)} · ${x.item === 'N' ? 'Normal' : x.item === 'C' ? 'Cracked' : 'Jumbo'} eggs`, end: `−${x.qty} pc` };
-    case 'count': { const adj = x.adj_n + x.adj_c + x.adj_j; return { title: `${x.kind === 'open' ? 'Opening count' : x.kind === 'close' ? 'Closing count' : 'Opening balance'} · ${locShort(D, x.location_id)}`, sub: adj ? `Variance ${eggs(adj)}` : 'Matched book stock', end: eggs(x.cnt_n + x.cnt_c + x.cnt_j) }; }
+      sub: x.status === 'received' ? `Received ${timeOf(x.received_at)}${t4(q(x, 'recv_')) < t4(q(x, 'sent_')) ? ` · ${eggs(t4(q(x, 'sent_')) - t4(q(x, 'recv_')))} short${+x.recv_dmg ? ` (${x.recv_dmg} damaged)` : ''}` : ''}` : `In transit · ${mix(q(x, 'sent_'))}`,
+      end: eggs(t4(q(x, 'sent_'))) };
+    case 'issue': return { title: `${x.kind === 'out' ? 'Issued to' : 'Taken in from'} ${x.party ?? 'outside'}`, sub: `${locShort(D, x.location_id)} · ${mix(q(x))}${x.note ? ` · ${x.note}` : ''}`, end: `${x.kind === 'out' ? '−' : '+'}${eggs(t4(q(x)))}` };
+    case 'sale': return { title: `${x.imported ? 'Sales (paper book)' : 'Sale'} · ${eggs(t4(q(x)))}`, sub: `${locShort(D, x.location_id)} · ${[['cash', 'Cash'], ['till', 'Till'], ['paybill', 'Paybill']].filter(([k]) => +x[k]).map(([k, l]) => `${l} ${n0(+x[k])}`).join(' + ')}${x.customer ? ` · ${x.customer}` : ''}${x.list_value != null && +x.list_value !== +x.value ? ` · list ${n0(+x.list_value)}` : ''}`, end: kes(+x.value) };
+    case 'brk': return { title: x.reason, sub: `${locShort(D, x.location_id)} · ${ITEM_NAME[x.item as 'N'] ?? x.item}`, end: `−${x.qty} pc` };
+    case 'count': { const adj = t4(q(x, 'adj_')); return { title: `${x.kind === 'open' ? 'Opening count' : x.kind === 'close' ? 'Closing count' : 'Opening balance'} · ${locShort(D, x.location_id)}`, sub: adj ? `Variance ${eggs(adj)}` : 'Matched book stock', end: eggs(t4(q(x, 'cnt_'))) }; }
     case 'money': return x.kind === 'expense' ? { title: `Expense · ${x.category ?? ''}`, sub: `${accName(D, x.from_acc)}${x.note ? ` · ${x.note}` : ''}`, end: `−${kes(+x.amount)}` }
       : x.kind === 'move' ? { title: x.note ?? 'Money moved', sub: `${accName(D, x.from_acc)} → ${accName(D, x.to_acc)}${+x.fee ? ` · charges ${n0(+x.fee)}` : ''}${x.ref ? ` · ${x.ref}` : ''}`, end: kes(+x.amount) }
       : { title: x.kind === 'opening' ? 'Opening balance' : 'Cash count variance', sub: accName(D, x.to_acc), end: kes(+x.amount) };

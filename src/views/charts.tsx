@@ -16,7 +16,7 @@ export function ProductionChart({ D }: { D: Dashboard }) {
   const days = fullDays(D);
   return <TimeChart label="Egg production by house" days={days} summary="avg" unit="trays / day" height={240}
     series={D.houses.map((h, i) => ({ key: h.id, label: h.name, color: houseColor(i),
-      values: days.map((d) => { const q = collected(D, [d], h.id), t = q.n + q.c + q.j; return t > 0 ? t / 30 : null; }) }))}
+      values: days.map((d) => { const q = collected(D, [d], h.id), t = q.n + (q.b ?? 0) + q.c + q.j; return t > 0 ? t / 30 : null; }) }))}
     overlay={{ label: 'Lay rate', color: '--fg', min: 50, max: 100, format: (v) => `${Math.round(v * 10) / 10}%`,
       values: days.map((d) => (tot(collected(D, [d])) > 0 ? fin(layRate(D, [d]) * 100) : null)) }}
     format={tr} tick={(v) => n0(v)} />;
@@ -40,18 +40,18 @@ export function PayChart({ D, loc }: { D: Dashboard; loc?: string }) {
 }
 
 export function FeedStockChart({ D }: { D: Dashboard }) {
-  const days = allDays(D), t = D.settings.feed_buffer_kg;
-  return <TimeChart label="Feed in store" days={days} summary="last" unit="kg" height={250} bands={t}
-    series={[{ key: 'feed', label: 'Feed in store (end of day)', color: '--fg', values: feedHistory(D, days) }]}
-    refLines={[{ value: t, label: `Full buffer ${n0(t)} kg`, color: '--f-full' }]}
+  const days = allDays(D), kg = D.settings.bag_kg, t = D.settings.feed_buffer_kg / kg;
+  return <TimeChart label="Feed in store" days={days} summary="last" unit="bags" height={250} bands={t}
+    series={[{ key: 'feed', label: 'Feed in store (end of day)', color: '--fg', values: feedHistory(D, days).map((x) => x / kg) }]}
+    refLines={[{ value: t, label: `Full buffer ${n0(t)} bags`, color: '--f-full' }]}
     format={n0} />;
 }
 
 export function FeedUseChart({ D }: { D: Dashboard }) {
-  const days = fullDays(D), plan = D.settings.feed_buffer_kg / 7;
-  return <TimeChart label="Daily feed use" days={days} summary="avg" unit="kg / day" height={200}
-    series={[{ key: 'use', label: 'Feed used', color: '--f-low', values: days.map((d) => feedUsed(D, [d])) }]}
-    refLines={[{ value: plan, label: `Plan ${n0(plan)} kg/day` }]}
+  const days = fullDays(D), kg = D.settings.bag_kg, plan = D.settings.feed_buffer_kg / kg / 7;
+  return <TimeChart label="Daily feed use" days={days} summary="avg" unit="bags / day" height={200}
+    series={[{ key: 'use', label: 'Feed used', color: '--f-low', values: days.map((d) => feedUsed(D, [d]) / kg) }]}
+    refLines={[{ value: plan, label: `Plan ${plan.toFixed(1)} bags/day` }]}
     format={n0} />;
 }
 

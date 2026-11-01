@@ -53,7 +53,7 @@ select t_err($$select rpc_med_new('Y', 'Other', 'g', 5)$$, 'not available');
 
 -- ---------- 4. the clerk sends eggs to several outlets at once ----------
 select t_as('00000000-0000-0000-0000-000000000003');
-select rpc_collect('A', 900, 30, 20);
+select rpc_collect_eggs('A', 900, 0, 20, 30, 0);
 do $$ declare before record; r jsonb; begin
   select n, c, j into before from v_stock where location_id = 'FARM';
   r := rpc_dispatch_many('FARM', '[{"to":"LUCKY","n":300,"c":10,"j":5},{"to":"TUALA","n":135,"c":15,"j":10},{"to":"RAYAN","n":0,"c":0,"j":0}]'::jsonb);

@@ -1,7 +1,7 @@
 // Owner and Farm Manager screens: overview, alerts, stock, money, report.
 import { addDays, dlabel, dnum, dshort, eggs, kes, kesS, n0, pct, range } from '../lib/format';
 import {
-  alertsFor, balance, collected, dayLedger, feedInfo, hensNow, intelligence, layRate, outletLoss, salesOn, stockNow, tankInfo, tot,
+  alertsFor, mix, produced, balance, collected, dayLedger, feedInfo, hensNow, intelligence, layRate, outletLoss, salesOn, stockNow, tankInfo, tot,
   totalFunds, waterOn, waterTrend,
 } from '../lib/metrics';
 import type { Dashboard } from '../lib/types';
@@ -11,18 +11,20 @@ import { useUI } from '../ui/ui';
 import { AlertList, BarList, Card, Delta, Empty, FeedCard, Kpi, LocDot, TankCard, sevClass, sevVar } from '../ui/widgets';
 import { HouseLayChart, PayChart, ProductionChart, SalesChart, WaterChart, houseColor } from './charts';
 import { NoticeList } from './common';
+import { MissingDays } from './Journey';
 
 export interface ViewProps { D: Dashboard; version: number; go: (tab: string) => void }
 
 export function Overview({ D, go }: ViewProps) {
   const ui = useUI();
   const y = addDays(D.today, -1), w1 = range(addDays(D.today, -7), y), w0 = range(addDays(D.today, -14), addDays(D.today, -8));
-  const cT = tot(collected(D, [D.today])), cY = tot(collected(D, [y]));
+  const cT = produced(D, [D.today]), cY = produced(D, [y]);
   const sT = salesOn(D, [D.today]), sY = salesOn(D, [y]);
   const wY = waterOn(D, [y]), wPrev = waterOn(D, range(addDays(y, -7), addDays(y, -1))) / 7;
   const A = alertsFor(D);
   return <>
-    <div className="sample"><div><h2>{dlabel(D.today)}</h2><div className="muted">{D.me.role === 'owner' ? 'All five sales points' : 'Central Farm and sales points'} · {hensNow(D)} hens</div></div></div>
+    <div className="sample"><div><h2>{dlabel(D.today)}</h2><div className="muted">{D.me.role === 'owner' ? 'All five sales points' : 'Central Farm and sales points'} · {n0(hensNow(D))} hens</div></div></div>
+    <MissingDays D={D} />
     <div className="kpis">
       <Kpi label="Eggs collected today" value={eggs(cT)} sub={`Yesterday ${eggs(cY)}`} />
       <Kpi label="Lay rate · 7 days" value={pct(layRate(D, w1))} sub={<><Delta a={layRate(D, w1)} b={layRate(D, w0)} pts /> vs week before</>} />
@@ -55,18 +57,19 @@ export function Alerts({ D }: ViewProps) {
   const ui = useUI(), A = alertsFor(D);
   const houses = D.houses.map((h) => ({ h, q: collected(D, [D.today], h.id), hens: hensNow(D, h.id), w: waterTrend(D, h.id) }));
   return <>
-    <div className="sample"><div><h2>{D.me.role === 'manager' ? `Hello, ${D.me.display_name}` : 'Alerts'}</h2><div className="muted">{dlabel(D.today)} · Central Farm · {hensNow(D)} hens</div></div></div>
+    <div className="sample"><div><h2>{D.me.role === 'manager' ? `Hello, ${D.me.display_name}` : 'Alerts'}</h2><div className="muted">{dlabel(D.today)} · Central Farm · {n0(hensNow(D))} hens</div></div></div>
+    {D.me.role === 'manager' && <MissingDays D={D} />}
     <Card title="Alerts" aside={<span className={`chip ${A.some((a) => a.sev === 'red' || a.sev === 'orange') ? 'sev-orange' : 'sev-info'}`}>{A.length} open</span>}><AlertList list={A} /></Card>
     <div className="grid2"><FeedCard D={D} /><TankCard D={D} /></div>
     <div className="grid2">
       <Card title="Today at the farm"><div className="list">{houses.map((x, i) => (
         <div className="li" key={x.h.id}><span className="av" style={{ background: `var(${houseColor(i)})` }}><Icon name="egg" /></span>
-          <div className="mid"><b>{x.h.name}</b><small>{x.hens} hens · {x.q.c} cracked · {x.q.j} jumbo</small><small>Water today {n0(x.w.today)} L · yesterday {n0(x.w.yesterday)} L</small></div>
+          <div className="mid"><b>{x.h.name}</b><small>{n0(x.hens)} hens · {mix({ ...x.q, n: 0 }) === 'none' ? 'all normal' : mix({ ...x.q, n: 0 })}</small><small>Water today {n0(x.w.today)} L · yesterday {n0(x.w.yesterday)} L</small></div>
           <div className="end">{eggs(tot(x.q))}</div></div>))}</div></Card>
       <Card title="Deliveries not yet confirmed">{D.transit.length ? <div className="list">{D.transit.map((x) => (
         <div className="li" key={x.id}><span className="av" style={{ background: 'var(--l-tuala)' }}><Icon name="truck" /></span>
           <div className="mid"><b>{D.locations.find((l) => l.id === x.from_loc)?.short} → {D.locations.find((l) => l.id === x.to_loc)?.short}</b><small>Sent {dlabel(x.d)}</small></div>
-          <div className="end">{eggs(x.sent_n + x.sent_c + x.sent_j)}<div><button className="act" onClick={() => ui.openForm(receiveForm(D, x))}>Receive</button></div></div></div>))}</div>
+          <div className="end">{eggs(x.sent_n + (x.sent_b ?? 0) + x.sent_c + x.sent_j)}<div><button className="act" onClick={() => ui.openForm(receiveForm(D, x))}>Receive</button></div></div></div>))}</div>
         : <Empty>All deliveries confirmed.</Empty>}</Card>
     </div>
     <Card title="Notifications" aside={<span className="muted">last 14 days</span>}><NoticeList D={D} /></Card>
@@ -75,25 +78,25 @@ export function Alerts({ D }: ViewProps) {
 
 export function Stock({ D }: ViewProps) {
   const ui = useUI();
-  const rows = D.locations.map((l) => ({ l, s: stockNow(D, l.id), it: D.transit.filter((x) => x.to_loc === l.id).reduce((a, x) => a + x.sent_n + x.sent_c + x.sent_j, 0) }));
-  const T = rows.reduce((a, r) => ({ n: a.n + r.s.n, c: a.c + r.s.c, j: a.j + r.s.j, it: a.it + r.it }), { n: 0, c: 0, j: 0, it: 0 });
+  const rows = D.locations.map((l) => ({ l, s: stockNow(D, l.id), it: D.transit.filter((x) => x.to_loc === l.id).reduce((a, x) => a + x.sent_n + (x.sent_b ?? 0) + x.sent_c + x.sent_j, 0) }));
+  const T = rows.reduce((a, r) => ({ n: a.n + r.s.n, b: a.b + r.s.b, c: a.c + r.s.c, j: a.j + r.s.j, it: a.it + r.it }), { n: 0, b: 0, c: 0, j: 0, it: 0 });
   const loss = outletLoss(D, range(addDays(D.today, -7), addDays(D.today, -1)));
   const v = (x: number) => (x ? n0(x) : '–');
   return <>
     <div className="sample"><div><h2>Stock across locations</h2><div className="muted">Normal eggs in trays of 30 and pieces</div></div></div>
     <Card title="On hand now"><div className="tblw"><table>
-      <thead><tr><th>Location</th><th>Normal</th><th>Cracked</th><th>Jumbo</th><th>On the way</th></tr></thead>
-      <tbody>{rows.map((r) => <tr key={r.l.id}><td><LocDot id={r.l.id} />{r.l.name}</td><td>{eggs(r.s.n)}</td><td>{r.s.c} pc</td><td>{r.s.j} pc</td><td>{r.it ? eggs(r.it) : '–'}</td></tr>)}</tbody>
-      <tfoot><tr><td>All locations</td><td>{eggs(T.n)}</td><td>{T.c} pc</td><td>{T.j} pc</td><td>{T.it ? eggs(T.it) : '–'}</td></tr></tfoot></table></div></Card>
+      <thead><tr><th>Location</th><th>Normal</th><th>Big</th><th>Jumbo</th><th>Cracked</th><th>On the way</th></tr></thead>
+      <tbody>{rows.map((r) => <tr key={r.l.id}><td><LocDot id={r.l.id} />{r.l.name}</td><td>{eggs(r.s.n)}</td><td>{r.s.b ? eggs(r.s.b) : '–'}</td><td>{r.s.j ? `${r.s.j} pc` : '–'}</td><td>{r.s.c ? eggs(r.s.c) : '–'}</td><td>{r.it ? eggs(r.it) : '–'}</td></tr>)}</tbody>
+      <tfoot><tr><td>All locations</td><td>{eggs(T.n)}</td><td>{eggs(T.b)}</td><td>{T.j} pc</td><td>{eggs(T.c)}</td><td>{T.it ? eggs(T.it) : '–'}</td></tr></tfoot></table></div></Card>
     <Card title="Today's stock movement" aside={<span className="muted">pieces</span>}><div className="tblw"><table>
-      <thead><tr><th>Location</th><th>Opening</th><th>+ Collected</th><th>+ Received</th><th>− Sent</th><th>− Sold</th><th>− Broken</th><th>± Count</th><th>On hand</th></tr></thead>
-      <tbody>{D.locations.map((l) => { const L = dayLedger(D, l.id, D.today); return <tr key={l.id}><td><LocDot id={l.id} />{l.short}</td><td>{n0(tot(L.open))}</td><td>{v(tot(L.coll))}</td><td>{v(tot(L.recv))}</td><td>{v(tot(L.out))}</td><td>{v(tot(L.sold))}</td><td>{v(tot(L.brk))}</td><td>{v(tot(L.adj))}</td><td><b>{n0(tot(L.close))}</b></td></tr>; })}</tbody></table></div>
-      <p className="muted" style={{ margin: '10px 0 0', fontSize: 13 }}>Each row balances: opening + collected + received − sent − sold − broken ± count = on hand.</p></Card>
+      <thead><tr><th>Location</th><th>Opening</th><th>+ Collected</th><th>+ Received</th><th>− Sent</th><th>− Issued</th><th>− Sold</th><th>− Damaged</th><th>± Count</th><th>On hand</th></tr></thead>
+      <tbody>{D.locations.map((l) => { const L = dayLedger(D, l.id, D.today); return <tr key={l.id}><td><LocDot id={l.id} />{l.short}</td><td>{n0(tot(L.open))}</td><td>{v(tot(L.coll))}</td><td>{v(tot(L.recv))}</td><td>{v(tot(L.out))}</td><td>{v(tot(L.iss))}</td><td>{v(tot(L.sold))}</td><td>{v(tot(L.brk))}</td><td>{v(tot(L.adj))}</td><td><b>{n0(tot(L.close))}</b></td></tr>; })}</tbody></table></div>
+      <p className="muted" style={{ margin: '10px 0 0', fontSize: 13 }}>Each row balances: opening + collected + received − sent − issued − sold − damaged ± count = on hand. Damaged at collection never enters stock.</p></Card>
     <div className="grid2">
       <Card title="On the way">{D.transit.length ? <div className="list">{D.transit.map((x) => <div className="li" key={x.id}><span className="av" style={{ background: 'var(--l-tuala)' }}><Icon name="truck" /></span>
         <div className="mid"><b>{D.locations.find((l) => l.id === x.from_loc)?.short} → {D.locations.find((l) => l.id === x.to_loc)?.short}</b><small>Sent {dlabel(x.d)}</small></div>
-        <div className="end">{eggs(x.sent_n + x.sent_c + x.sent_j)}<div><button className="act" onClick={() => ui.openForm(receiveForm(D, x))}>Receive</button></div></div></div>)}</div> : <Empty>Nothing in transit.</Empty>}</Card>
-      <Card title="Breakage, last 7 days" aside={<span className="muted">transit + handling</span>}>
+        <div className="end">{eggs(x.sent_n + (x.sent_b ?? 0) + x.sent_c + x.sent_j)}<div><button className="act" onClick={() => ui.openForm(receiveForm(D, x))}>Receive</button></div></div></div>)}</div> : <Empty>Nothing in transit.</Empty>}</Card>
+      <Card title="Damaged eggs, last 7 days" aside={<span className="muted">collection, transit, shops</span>}>
         <BarList format={(v) => pct(v)} rows={loss.map((o) => ({ key: o.loc, label: <><LocDot id={o.loc} />{D.locations.find((l) => l.id === o.loc)?.short}</>, value: o.rate,
           color: o.rate * 100 > D.settings.break_tol ? '--f-low' : '--f-full', note: `${o.loss} pc lost of ${eggs(o.base)}` }))} /></Card>
     </div>
@@ -153,7 +156,7 @@ export function Report({ D }: ViewProps) {
     ['Eggs collected', `${n0(a.eggs / 30)} tr`, `${n0(b.eggs / 30)} tr`, a.eggs, b.eggs, false],
     ['Lay rate', pct(a.lay), pct(b.lay), a.lay, b.lay, false, true],
     ['Cracked at collection', pct(a.cracked), pct(b.cracked), a.cracked, b.cracked, true, true],
-    ['Feed used', `${n0(a.feed)} kg`, `${n0(b.feed)} kg`, a.feed, b.feed, null],
+    ['Feed used', `${n0(a.feed / D.settings.bag_kg)} bags`, `${n0(b.feed / D.settings.bag_kg)} bags`, a.feed, b.feed, null],
     ['Feed per egg', `${n0(a.gpe)} g`, `${n0(b.gpe)} g`, a.gpe, b.gpe, true],
     ['Feed cost per tray', kes(a.costTray), kes(b.costTray), a.costTray, b.costTray, true],
     ['Water drunk', `${n0(a.water)} L`, `${n0(b.water)} L`, a.water, b.water, null],

@@ -8,7 +8,7 @@ export type Field =
   | { type: 'eggs'; id: string; label: string; hint?: string; def?: number }
   | { type: 'select'; id: string; label: string; options: [string, string][]; def?: string }
   | { type: 'text'; id: string; label: string; placeholder?: string; def?: string }
-  | { type: 'date'; id: string; label: string; def?: string }
+  | { type: 'date'; id: string; label: string; def?: string; min?: string; max?: string; hint?: string }
   | { type: 'pair'; fields: Field[] }
   /** Fields shown only while show(values) is true (e.g. "new item" details). */
   | { type: 'group'; show: (v: V) => boolean; fields: Field[] }
@@ -88,7 +88,8 @@ function FieldView({ f, v, set }: { f: Field; v: V; set: (p: V) => void }) {
         <div className="inp"><input id={`f_${f.id}`} type="text" value={v[f.id]} placeholder={f.placeholder} onChange={(e) => set({ [f.id]: e.target.value })} /></div></label>);
     case 'date': return (
       <label className="fld"><span>{f.label}</span>
-        <div className="inp"><input id={`f_${f.id}`} type="date" value={v[f.id]} onChange={(e) => set({ [f.id]: e.target.value })} /></div></label>);
+        <div className="inp"><input id={`f_${f.id}`} type="date" value={v[f.id]} min={f.min} max={f.max} onChange={(e) => set({ [f.id]: e.target.value })} /></div>
+        {f.hint && <small>{f.hint}</small>}</label>);
   }
 }
 

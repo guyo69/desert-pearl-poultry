@@ -135,3 +135,29 @@ describe('intelligence report', () => {
     expect(salesOn(D, I.W1).value).toBe(I.a.sales);
   });
 });
+
+describe('big and damaged eggs, issues', async () => {
+  const { produced, mix } = await import('../src/lib/metrics');
+  const B = JSON.parse(JSON.stringify(D)) as Dashboard;
+  B.settings = { ...B.settings, tray_b: 510, pc_b: 18 };
+  it('prices big eggs by tray and piece', () => {
+    expect(priceOf(B, { n: 0, b: 32, c: 0, j: 0 })).toBe(546);
+  });
+  it('counts damaged at collection as production, not stock', () => {
+    const day = B.today, before = produced(B, [day]);
+    B.farm_daily = B.farm_daily.map((r) => (r.d === day ? { ...r, dmg: 5 } : r));
+    expect(produced(B, [day])).toBe(before + 5 * B.farm_daily.filter((r) => r.d === day).length);
+  });
+  it('takes issued eggs out of the day sheet', () => {
+    const loc = 'TUALA', day = B.today, L0 = dayLedger(B, loc, day);
+    B.stock_daily = [...B.stock_daily, { location_id: loc, d: day, kind: 'issue', n: -60, b: 0, c: 0, j: 0 }];
+    B.stock = B.stock.map((s) => (s.location_id === loc ? { ...s, n: s.n - 60 } : s));
+    const L1 = dayLedger(B, loc, day);
+    expect(L1.iss.n).toBe(60);
+    expect(tot(L1.open)).toBe(tot(L0.open));
+    expect(tot(L1.close)).toBe(tot(L0.close) - 60);
+  });
+  it('describes a mix of grades', () => {
+    expect(mix({ n: 60, b: 31, c: 5, j: 2 })).toBe('2 tr normal · 1 tr 1 pc big · 2 jumbo · 5 pc cracked');
+  });
+});

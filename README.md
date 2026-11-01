@@ -16,6 +16,10 @@ Farm, stock and money app for **Desert Pearl Ventures Ltd (Tuala Farm Fresh Eggs
 - **Money moves cannot create or lose money.** "Paybill → cash", "cash → bank" and similar moves take from one account and add to another. Only charges (M-Pesa or bank fees) reduce the total. The owner's Money screen proves it: opening funds + sales − expenses − charges ± count differences = what is in the four places.
 - **Deliveries are confirmed at the other end.** Eggs sent from the farm stay "on the way" until the outlet counts and confirms them. Any shortfall is logged as transit breakage and reported.
 - **Opening and closing counts** at every sales point compare the physical count with the book and record any difference.
+- **Egg grades.** Normal, big, jumbo / double yolk and cracked (sellable) are stock, each with its own price. Damaged / broken eggs are recorded at collection, on arrival and at the outlets, and always written off.
+- **Issued out.** Eggs that leave an outlet without a sale (credit customers, bulk orders) are recorded with who received them.
+- **Missed days.** The owner and farm manager can enter a day up to 62 days back (daily house sheet, daily stock sheet). If a later stock count already absorbed the missing record as a variance, that variance is reduced by the same amount, so nothing is counted twice.
+- **Paper-book imports** are flagged `imported`; their money is history and stays out of account balances, which start at go-live.
 - **The database enforces the rules.** All writes go through database functions that check the person's role and location; row-level security means a shop attendant's phone cannot even download another location's figures.
 
 ## Feed buffer and water
@@ -30,7 +34,7 @@ Feed and the water tank use the same five colour bands:
 | Low (orange) | 25–49% |
 | No buffer (red) | below 25% |
 
-- **Feed:** the full buffer is the weekly requirement, set in Setup (default **315 kg**). When a feed entry drops the store into a worse band, the manager is notified at once. Note: 45 bags of 50 kg is about 2,250 kg/week (≈315 kg/day); change the setting when the feed formula is confirmed.
+- **Feed:** the full buffer is the weekly requirement, set in Setup in **bags** (default **315 bags**, kept in kg as bags × bag size). Feed is shown in bags everywhere. When a feed entry drops the store into a worse band, the manager is notified at once.
 - **Water:** the clerk records litres drunk per house and tank readings. Alerts fire when a house drinks 10% less than its 7-day average (often the first sign of disease or a blocked line), when the water-to-feed ratio leaves 1.6–2.5 L per kg, and when the tank drops into Low or No buffer.
 
 A database job runs every morning at 06:00 Nairobi time to check water, lay rate, feed, tank, vaccinations due, low medicine and unbanked cash.
@@ -123,6 +127,27 @@ src/forms/forms.tsx    every data-entry form
 src/views/             screens per role
 tests/                 unit tests + fixtures exported from the database
 ```
+
+### Refreshing and data use
+
+Phones ask `data_version()` once a minute while the app is on screen (a few bytes) and download the full dashboard only when it changed, at most every 2 minutes, or straight after a save. A write anywhere moves the counter.
+
+### Backups
+
+Every Sunday at 23:00 Nairobi (`pg_cron` job `dpv-weekly-backup`) the `backup` function writes the farm records as gzipped JSON to the private Storage bucket `backups` and keeps the newest 12. Sign-in secrets, two-step keys and push addresses are left out. The owner can back up now and download under Activity → Setup → Backups.
+
+To restore into a database that has the migrations applied:
+
+```
+node scripts/backup-to-sql.mjs dpv-2026-11-08-20-00.json.gz > restore.sql
+psql "<connection string>" -v ON_ERROR_STOP=1 -f restore.sql
+```
+
+The SQL runs in one transaction and moves the id counters past the restored rows. Staff sign-in accounts are recreated by the owner afterwards.
+
+### Retiring the old egg functions
+
+`20261101000009_retire_grade_blind.sql` removes the functions that cannot record big or damaged eggs. Apply it once the app version with egg grades is live on every phone.
 
 ### Deploying function changes
 

@@ -1,9 +1,9 @@
 // Every data-entry form in the app. Each returns a FormSpec; the database
 // function behind it re-checks everything, so these checks are for speed only.
 import { rpc, staffAdmin } from '../lib/api';
-import { eggs, kes, n0, pct } from '../lib/format';
-import { ITEMS, ITEM_NAME, accName, balance, band, cashAcc, feedInfo, locName, priceOf, stockNow, tankInfo, tot, waterOn } from '../lib/metrics';
-import type { Dashboard, House, Medicine, Q, ScheduleItem, StaffLite, Transfer } from '../lib/types';
+import { addDays, dlabel, eggs, kes, n0, pct } from '../lib/format';
+import { ITEMS, ITEM_NAME, Z, accName, balance, band, cashAcc, collected, damagedAtFarm, dayLedger, feedInfo, hensNow, houseAge, locName, mix, priceOf, salesOn, stockNow, tankInfo, tot, waterOn } from '../lib/metrics';
+import type { Dashboard, House, Item, Medicine, Q, ScheduleItem, StaffLite, Transfer } from '../lib/types';
 import type { Field, FormSpec, V } from '../ui/ui';
 
 const houseOpts = (D: Dashboard): [string, string][] => D.houses.map((h) => [h.id, h.name]);
@@ -12,36 +12,120 @@ const Row = ({ l, r }: { l: React.ReactNode; r: React.ReactNode }) => <div><span
 const Ok = ({ children }: { children: React.ReactNode }) => <div><span>{children}</span><b className="up">✓</b></div>;
 const Bad = ({ l, r }: { l: React.ReactNode; r: React.ReactNode }) => <div><span>{l}</span><b style={{ color: 'var(--f-none)' }}>{r}</b></div>;
 
+/* ---------------- shared pieces ---------------- */
+const isMgmt = (D: Dashboard) => D.me.role === 'owner' || D.me.role === 'manager';
+/** The owner and farm manager can enter a missed day (up to 62 days back); everyone else records today. */
+const dateFields = (D: Dashboard, hint = 'Leave as today unless you are entering a missed day.', def = D.today): Field[] =>
+  isMgmt(D) ? [{ type: 'date', id: 'date', label: 'Date', def, min: addDays(D.today, -62), max: D.today, hint }] : [];
+const dayOf = (D: Dashboard, v: V): string => (isMgmt(D) && v.date ? String(v.date) : D.today);
+const dateArg = (D: Dashboard, v: V) => (dayOf(D, v) === D.today ? null : dayOf(D, v));
+const onDay = (D: Dashboard, v: V) => (dayOf(D, v) === D.today ? '' : ` for ${dlabel(dayOf(D, v))}`);
+/** Egg inputs by grade, keyed `${p}n`, `${p}b`, `${p}j`, `${p}c` (+ `${p}dmg`). */
+function gradeFields(p: string, o: { def?: Partial<Q>; dmg?: string; only?: Item[]; hint?: Partial<Record<Item, string>> } = {}): Field[] {
+  const want = (i: Item) => !o.only || o.only.includes(i);
+  const f: Field[] = [];
+  if (want('N')) f.push({ type: 'eggs', id: `${p}n`, label: 'Normal eggs', def: o.def?.n, hint: o.hint?.N });
+  if (want('B')) f.push({ type: 'eggs', id: `${p}b`, label: 'Big eggs', def: o.def?.b, hint: o.hint?.B });
+  if (want('C')) f.push({ type: 'eggs', id: `${p}c`, label: 'Cracked (sellable)', def: o.def?.c, hint: o.hint?.C });
+  const small: Field[] = [];
+  if (want('J')) small.push({ type: 'num', id: `${p}j`, label: 'Jumbo / double yolk', suffix: 'pc', def: o.def?.j ?? '' });
+  if (o.dmg) small.push({ type: 'num', id: `${p}dmg`, label: o.dmg, suffix: 'pc' });
+  if (small.length) f.push({ type: 'pair', fields: small });
+  return f;
+}
+const gradesOf = (v: V, p = ''): Q => ({ n: v[`${p}n`] || 0, b: v[`${p}b`] || 0, c: v[`${p}c`] || 0, j: v[`${p}j`] || 0 });
+const neg = (q: Q) => q.n < 0 || q.b < 0 || q.c < 0 || q.j < 0;
+const over = (q: Q, have: Q): string | null => {
+  const names: [keyof Q, string][] = [['n', 'normal'], ['b', 'big'], ['c', 'cracked'], ['j', 'jumbo']];
+  const x = names.find(([k]) => q[k] > Math.max(0, have[k]));
+  return x ? `Only ${eggs(Math.max(0, have[x[0]]))} ${x[1]} in stock` : null;
+};
+
 /* ---------------- production clerk ---------------- */
 export const collectForm = (D: Dashboard): FormSpec => ({
   title: 'Egg collection',
+  intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Grade the eggs as you collect. Damaged / broken eggs count towards production but never go into stock.</p>,
   fields: [
+    ...dateFields(D),
     { type: 'select', id: 'house', label: 'House', options: houseOpts(D) },
-    { type: 'eggs', id: 'n', label: 'Normal eggs' },
-    { type: 'pair', fields: [{ type: 'num', id: 'c', label: 'Cracked', suffix: 'pieces' }, { type: 'num', id: 'j', label: 'Jumbo / double yolk', suffix: 'pieces' }] },
+    ...gradeFields('', { dmg: 'Damaged / broken' }),
   ],
-  calc: (v) => <Row l="This entry" r={eggs(v.n + v.c + v.j)} />,
+  calc: (v) => { const q = gradesOf(v); return <>
+    <Row l="Into stock" r={eggs(tot(q))} />
+    {v.dmg > 0 && <Row l="Damaged (written off)" r={`${v.dmg} pc`} />}
+    <Row l="Total collected" r={eggs(tot(q) + v.dmg)} /></>; },
   onSubmit: async (v) => {
-    await rpc('rpc_collect', { p_house: v.house, p_n: v.n, p_c: v.c, p_j: v.j });
-    return `Collection saved: ${eggs(v.n + v.c + v.j)}.`;
+    const q = gradesOf(v);
+    if (tot(q) + v.dmg <= 0) throw new Error('Enter the eggs collected.');
+    await rpc('rpc_collect_eggs', { p_house: v.house, p_n: q.n, p_b: q.b, p_j: q.j, p_c: q.c, p_dmg: v.dmg, p_date: dateArg(D, v) });
+    return `Collection saved${onDay(D, v)}: ${eggs(tot(q) + v.dmg)}.`;
   },
 });
 
+/**
+ * The farm's daily book, one block per house. The app works out the rest of
+ * the line: age, hens at the start and end of the day, production, lay rate.
+ */
+export function houseDayForm(D: Dashboard, day?: string): FormSpec {
+  const s = D.settings;
+  const fields: Field[] = [...dateFields(D, 'For a missed day, choose the date. Hens and age are worked out for that day.', day)];
+  for (const h of D.houses) fields.push(
+    { type: 'note', text: <div className="dest"><b>{h.name}</b></div> },
+    ...gradeFields(`${h.id}_`, { dmg: 'Damaged / broken' }),
+    { type: 'pair', fields: [{ type: 'num', id: `${h.id}_deaths`, label: 'Deaths', suffix: 'birds' }, { type: 'num', id: `${h.id}_feed`, label: 'Feed given', suffix: 'bags', step: 0.5 }] },
+    { type: 'num', id: `${h.id}_water`, label: 'Water drunk', suffix: 'L' },
+  );
+  const lines = (v: V) => D.houses.map((h) => {
+    const day = dayOf(D, v), q = gradesOf(v, `${h.id}_`), dmg = v[`${h.id}_dmg`] || 0, deaths = v[`${h.id}_deaths`] || 0;
+    const row = D.farm_daily.find((r) => r.house_id === h.id && r.d === day);
+    const before = row ? row.hens : day === D.today ? hensNow(D, h.id) : h.birds_at_start;
+    const already = tot(collected(D, [day], h.id)) + damagedAtFarm(D, [day], h.id);
+    const laid = already + tot(q) + dmg;
+    return { h, q, dmg, deaths, feed: (v[`${h.id}_feed`] || 0) * s.bag_kg, water: v[`${h.id}_water`] || 0,
+             before, close: before - (row?.deaths ?? 0) - deaths, already, laid,
+             age: houseAge({ ...D, today: day }, h) };
+  });
+  return {
+    title: 'Daily house sheet',
+    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>The farm book in one go: eggs by grade, deaths, feed and water for each house. Leave a house blank if nothing is new. Age, hens and lay rate fill in by themselves.</p>,
+    fields, submit: 'Save the day',
+    calc: (v) => <>{lines(v).map((x) => <div key={x.h.id} className="sheet-line">
+      <Row l={`${x.h.name} · ${x.age} weeks`} r={`${n0(x.before)} → ${n0(x.close)} hens`} />
+      <Row l={`Laid${x.already ? ` (incl. ${eggs(x.already)} already entered)` : ''}`} r={`${eggs(x.laid)} · ${x.before ? pct(x.laid / x.before) : '–'} lay`} />
+      {x.before > 0 && x.laid / x.before < x.h.expected_lay - 0.05 && x.laid > 0 && <Bad l="Below the expected lay rate" r={pct(x.h.expected_lay, 0)} />}
+    </div>)}
+      <Row l="Feed for the day" r={`${n0(lines(v).reduce((a, x) => a + x.feed, 0) / s.bag_kg)} bags · ${n0(lines(v).reduce((a, x) => a + x.feed, 0))} kg`} />
+      <Row l="Water for the day" r={`${n0(lines(v).reduce((a, x) => a + x.water, 0))} L`} /></>,
+    onSubmit: async (v) => {
+      const rows = lines(v).filter((x) => tot(x.q) + x.dmg + x.deaths + x.feed + x.water > 0)
+        .map((x) => ({ house: x.h.id, ...x.q, dmg: x.dmg, deaths: x.deaths, cause: 'Unknown', feed_kg: x.feed, water_l: x.water }));
+      if (!rows.length) throw new Error('Enter at least one figure.');
+      if (rows.some((r) => neg(r) || r.dmg < 0 || r.deaths < 0)) throw new Error('Numbers cannot be negative.');
+      const r = await rpc<{ saved: number }>('rpc_house_day', { p_date: dateArg(D, v), p_rows: rows });
+      return `House sheet saved${onDay(D, v)}: ${r.saved} record${r.saved === 1 ? '' : 's'}.`;
+    },
+  };
+}
+
 export function feedUseForm(D: Dashboard): FormSpec {
-  const f = feedInfo(D);
+  const f = feedInfo(D), kgBag = D.settings.bag_kg;
+  const kgOf = (v: V) => v.bags * kgBag + v.kg;
   return {
     title: 'Feed used',
     fields: [
-      { type: 'num', id: 'kg', label: 'Feed given', suffix: 'kg', hint: `In store: ${n0(f.stock)} kg` },
+      { type: 'pair', fields: [{ type: 'num', id: 'bags', label: 'Bags given', suffix: 'bags', step: 0.5 }, { type: 'num', id: 'kg', label: 'Plus loose', suffix: 'kg' }] },
+      { type: 'note', text: <div><span>In store: {n0(f.stockBags)} bags ({n0(f.stock)} kg) · 1 bag = {kgBag} kg</span></div> },
       { type: 'select', id: 'house', label: 'House', options: houseNameOpts(D) },
       { type: 'select', id: 'note', label: 'Feeding', options: [['Morning feed', 'Morning'], ['Afternoon feed', 'Afternoon'], ['Extra feed', 'Extra']] },
     ],
-    calc: (v) => { const left = f.stock - v.kg, b = band(left / f.target); return <>
-      <div><span>Left after this</span><b style={{ color: `var(${b.color})` }}>{n0(left)} kg · {pct(left / f.target, 0)}</b></div>
+    calc: (v) => { const left = f.stock - kgOf(v), b = band(left / f.target); return <>
+      <Row l="This entry" r={`${n0(kgOf(v))} kg`} />
+      <div><span>Left after this</span><b style={{ color: `var(${b.color})` }}>{n0(left / kgBag)} of {n0(f.targetBags)} bags · {pct(left / f.target, 0)}</b></div>
       <Row l="Buffer band" r={b.label} /></>; },
     onSubmit: async (v) => {
-      const r = await rpc<{ band_label: string; level: number; notified: boolean }>('rpc_feed', { p_kind: 'use', p_kg: v.kg, p_house: v.house, p_note: v.note });
-      return `Saved. Feed at ${pct(r.level, 0)} (${r.band_label}).${r.notified ? ' Farm Manager notified.' : ''}`;
+      if (kgOf(v) <= 0) throw new Error('Enter the feed given.');
+      const r = await rpc<{ band_label: string; level: number; notified: boolean }>('rpc_feed', { p_kind: 'use', p_kg: kgOf(v), p_house: v.house, p_note: v.note });
+      return `Saved. Feed at ${pct(r.level, 0)} of the buffer (${r.band_label}).${r.notified ? ' Farm Manager notified.' : ''}`;
     },
   };
 }
@@ -57,12 +141,12 @@ export function feedInForm(D: Dashboard): FormSpec {
     ],
     calc: (v) => { const add = v.bags * v.kgbag, b = band((f.stock + add) / f.target); return <>
       <Row l="Adds" r={`${n0(add)} kg · ${kes(v.bags * v.price)}`} />
-      <div><span>Store after delivery</span><b style={{ color: `var(${b.color})` }}>{n0(f.stock + add)} kg · {b.label}</b></div></>; },
+      <div><span>Store after delivery</span><b style={{ color: `var(${b.color})` }}>{n0((f.stock + add) / s.bag_kg)} of {n0(f.targetBags)} bags · {b.label}</b></div></>; },
     onSubmit: async (v) => {
       if (v.bags <= 0) throw new Error('Enter the number of bags delivered.');
       const r = await rpc<{ stock: number; band_label: string }>('rpc_feed', { p_kind: 'in', p_kg: v.bags * v.kgbag, p_bags: v.bags, p_cost: v.bags * v.price,
         p_note: 'Layers feed', p_paid_from: v.paid === 'none' ? null : v.paid });
-      return `Feed store now ${n0(r.stock)} kg (${r.band_label}).`;
+      return `Feed store now ${n0(r.stock / s.bag_kg)} bags (${r.band_label}).`;
     },
   };
 }
@@ -172,73 +256,95 @@ export const mortForm = (D: Dashboard): FormSpec => ({
 export function dispatchForm(D: Dashboard, from: string): FormSpec {
   const st = stockNow(D, from);
   const dests = D.locations.filter((l) => l.id !== from);
-  const lines = (v: V) => dests.map((l) => ({ to: l.id, name: l.name, n: v[`n_${l.id}`] || 0, c: v[`c_${l.id}`] || 0, j: v[`j_${l.id}`] || 0 }))
-    .filter((x) => x.n + x.c + x.j > 0);
-  const fields: Field[] = [
-    { type: 'note', text: <div><span>In stock at {locName(D, from)}</span><b>{eggs(st.n)} normal · {st.c} cracked · {st.j} jumbo</b></div> },
-  ];
-  for (const l of dests) {
-    fields.push(
-      { type: 'note', text: <div className="dest"><b>To {l.name}</b></div> },
-      { type: 'eggs', id: `n_${l.id}`, label: 'Normal eggs' },
-      { type: 'pair', fields: [{ type: 'num', id: `c_${l.id}`, label: 'Cracked', suffix: 'pc' }, { type: 'num', id: `j_${l.id}`, label: 'Jumbo / double yolk', suffix: 'pc' }] },
-    );
-  }
+  const lines = (v: V) => dests.map((l) => ({ to: l.id, name: l.name, ...gradesOf(v, `${l.id}_`) })).filter((x) => tot(x) > 0);
+  const fields: Field[] = [{ type: 'note', text: <div><span>In stock at {locName(D, from)}</span><b>{mix(st)}</b></div> }];
+  for (const l of dests) fields.push({ type: 'note', text: <div className="dest"><b>To {l.name}</b></div> }, ...gradeFields(`${l.id}_`));
   return {
     title: 'Send eggs',
     intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Fill in only the outlets you are sending to. Everything is sent together, and each outlet confirms its count on arrival.</p>,
-    fields,
-    submit: 'Send',
+    fields, submit: 'Send',
     calc: (v) => {
-      const L = lines(v), tn = L.reduce((a, x) => a + x.n, 0), tc = L.reduce((a, x) => a + x.c, 0), tj = L.reduce((a, x) => a + x.j, 0);
+      const L = lines(v), all = L.reduce((a, x) => ({ n: a.n + x.n, b: a.b + x.b, c: a.c + x.c, j: a.j + x.j }), Z());
       if (!L.length) return <div><span className="muted">Enter the eggs for at least one outlet</span></div>;
-      return <>
-        {L.map((x) => <Row key={x.to} l={x.name} r={`${eggs(x.n)}${x.c ? ` · ${x.c} cracked` : ''}${x.j ? ` · ${x.j} jumbo` : ''}`} />)}
-        {tn > st.n ? <Bad l="Normal eggs: more than in stock" r={eggs(tn - st.n)} /> : <Row l="Normal left after" r={eggs(st.n - tn)} />}
-        {tc > st.c && <Bad l="Cracked: more than in stock" r={`${tc - st.c} pc`} />}
-        {tj > st.j && <Bad l="Jumbo: more than in stock" r={`${tj - st.j} pc`} />}
-      </>;
+      const o = over(all, st);
+      return <>{L.map((x) => <Row key={x.to} l={x.name} r={mix(x)} />)}
+        {o ? <Bad l={o} r="Check" /> : <Row l="Left after" r={mix({ n: st.n - all.n, b: st.b - all.b, c: st.c - all.c, j: st.j - all.j })} />}</>;
     },
     onSubmit: async (v) => {
       const L = lines(v);
       if (!L.length) throw new Error('Enter the eggs for at least one outlet.');
-      await rpc('rpc_dispatch_many', { p_from: from, p_items: L.map(({ to, n, c, j }) => ({ to, n, c, j })) });
-      return L.length === 1 ? `${eggs(L[0].n + L[0].c + L[0].j)} on the way to ${L[0].name}. They confirm the count on arrival.`
+      await rpc('rpc_dispatch_many', { p_from: from, p_items: L.map(({ to, n, b, c, j }) => ({ to, n, b, c, j })) });
+      return L.length === 1 ? `${eggs(tot(L[0]))} on the way to ${L[0].name}. They confirm the count on arrival.`
         : `Sent to ${L.length} outlets: ${L.map((x) => x.name).join(', ')}. Each confirms its count on arrival.`;
     },
   };
 }
 
+const sentOf = (x: Transfer): Q => ({ n: x.sent_n, b: x.sent_b ?? 0, c: x.sent_c, j: x.sent_j });
 export function receiveForm(D: Dashboard, x: Transfer): FormSpec {
-  const fields: Field[] = [{ type: 'eggs', id: 'n', label: 'Normal eggs received', def: x.sent_n }];
-  if (x.sent_c || x.sent_j) fields.push({ type: 'pair', fields: [
-    ...(x.sent_c ? [{ type: 'num', id: 'c', label: 'Cracked received', suffix: 'pc', def: x.sent_c } as Field] : []),
-    ...(x.sent_j ? [{ type: 'num', id: 'j', label: 'Jumbo received', suffix: 'pc', def: x.sent_j } as Field] : []),
-  ] });
-  const recv = (v: V): Q => ({ n: v.n, c: x.sent_c ? v.c : 0, j: x.sent_j ? v.j : 0 });
-  const sent = x.sent_n + x.sent_c + x.sent_j;
+  const sent = sentOf(x);
+  const only = ITEMS.filter((i) => sent[i.toLowerCase() as keyof Q] > 0);
   return {
     title: `Receive from ${locName(D, x.from_loc)}`,
-    intro: <div className="calc"><Row l="Sent" r={`${eggs(x.sent_n)} normal${x.sent_c ? ` · ${x.sent_c} cracked` : ''}${x.sent_j ? ` · ${x.sent_j} jumbo` : ''}`} /></div>,
-    fields, submit: 'Confirm receipt',
-    calc: (v) => { const d = sent - tot(recv(v)); return d > 0 ? <><Bad l="Short" r={eggs(d)} /><div><span>Logged as transit breakage and reported to the Farm Manager</span></div></>
-      : d < 0 ? <Bad l="More than was sent" r="Check the count" /> : <Ok>Matches what was sent</Ok>; },
+    intro: <div className="calc"><Row l={`Sent ${dlabel(x.d)}`} r={mix(sent)} /><div><span>Count what arrived in good condition. Broken eggs go under Damaged.</span></div></div>,
+    fields: [...gradeFields('', { def: sent, only: only.length ? only : ['N'], dmg: 'Damaged on arrival' })],
+    submit: 'Confirm receipt',
+    calc: (v) => {
+      const q = gradesOf(v), short = tot(sent) - tot(q);
+      if (q.n > sent.n || q.b > sent.b || q.c > sent.c || q.j > sent.j) return <Bad l="More than was sent" r="Check the count" />;
+      if (short === 0) return v.dmg ? <Bad l="Damaged eggs, but nothing is short" r="Check" /> : <Ok>Matches what was sent</Ok>;
+      return <><Row l="Good eggs received" r={eggs(tot(q))} />
+        {v.dmg > short ? <Bad l="Damaged is more than the shortfall" r={`${short} pc short`} /> : <>
+          {v.dmg > 0 && <Row l="Damaged on arrival" r={`${v.dmg} pc`} />}
+          {short - v.dmg > 0 && <Bad l="Missing" r={eggs(short - v.dmg)} />}</>}
+        <div><span>Written off and reported to the Farm Manager</span></div></>;
+    },
     onSubmit: async (v) => {
-      const r = recv(v);
-      const res = await rpc<{ short: number }>('rpc_receive', { p_transfer: x.id, p_n: r.n, p_c: r.c, p_j: r.j });
-      return res.short > 0 ? `Received with ${eggs(res.short)} short. Farm Manager notified.` : 'Delivery received. Stock updated.';
+      const q = gradesOf(v);
+      const res = await rpc<{ short: number; damaged: number; missing: number }>('rpc_receive_delivery', { p_transfer: x.id, p_n: q.n, p_b: q.b, p_j: q.j, p_c: q.c, p_dmg: v.dmg });
+      return res.short > 0 ? `Received: ${res.damaged} damaged, ${eggs(res.missing)} missing. Farm Manager notified.` : 'Delivery received. Stock updated.';
     },
   };
 }
 
-export function breakageForm(D: Dashboard, loc: string): FormSpec {
+/** Eggs leaving the outlet to someone outside the app: a customer on credit, a bulk buyer, another farm. */
+export function issueForm(D: Dashboard, loc: string): FormSpec {
   const st = stockNow(D, loc);
   return {
-    title: 'Breakage / spoilage',
+    title: 'Issue eggs out',
+    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>For eggs that leave without a sale today: customers on credit, bulk orders collected, eggs returned to a supplier. Sending to another outlet is under <b>Send eggs</b> instead.</p>,
     fields: [
-      { type: 'select', id: 'item', label: 'Eggs', options: ITEMS.map((i): [string, string] => [i, `${ITEM_NAME[i]} (${eggs(i === 'N' ? st.n : i === 'C' ? st.c : st.j)})`]) },
-      { type: 'num', id: 'qty', label: 'Eggs lost', suffix: 'pieces' },
-      { type: 'select', id: 'reason', label: 'Reason', options: [['Handling breakage', 'Broken while handling'], ['Customer return', 'Customer return'], ['Spoilage', 'Spoiled / expired'], ['Transport breakage', 'Broken on the road']] },
+      ...dateFields(D),
+      { type: 'note', text: <div><span>In stock</span><b>{mix(st)}</b></div> },
+      ...gradeFields(''),
+      { type: 'text', id: 'party', label: 'Issued to', placeholder: 'Name of the customer or place' },
+      { type: 'select', id: 'why', label: 'Reason', options: [['Customer on credit', 'Customer on credit'], ['Bulk order collected', 'Bulk order collected'], ['Owner / staff use', 'Owner / staff use'], ['Other', 'Other']] },
+      { type: 'text', id: 'note', label: 'Note (optional)', placeholder: 'e.g. pays on Friday' },
+    ],
+    calc: (v) => { const q = gradesOf(v), o = over(q, st); return <>{o ? <Bad l={o} r="Check" /> : <Row l="Issuing" r={mix(q)} />}
+      {v.why === 'Customer on credit' && tot(q) > 0 && <Row l="Value at list price" r={kes(priceOf(D, q))} />}</>; },
+    onSubmit: async (v) => {
+      const q = gradesOf(v);
+      if (!tot(q)) throw new Error('Enter the eggs issued.');
+      if (!String(v.party ?? '').trim()) throw new Error('Say who received the eggs.');
+      await rpc('rpc_issue_out', { p_loc: loc, p_n: q.n, p_b: q.b, p_j: q.j, p_c: q.c, p_party: String(v.party).trim(),
+        p_note: [v.why, v.note].filter(Boolean).join(': '), p_date: dateArg(D, v) });
+      return `${eggs(tot(q))} issued to ${String(v.party).trim()}${onDay(D, v)}.`;
+    },
+  };
+}
+
+/** Damaged at the outlet: broken in handling, spoiled, returned. Always written off. */
+export function breakageForm(D: Dashboard, loc: string): FormSpec {
+  const st = stockNow(D, loc);
+  const have = (i: Item) => st[i.toLowerCase() as keyof Q];
+  return {
+    title: 'Damaged eggs',
+    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Eggs too broken to sell. Cracked eggs that can still be sold stay in stock as <b>Cracked</b>.</p>,
+    fields: [
+      { type: 'select', id: 'item', label: 'Grade', options: ITEMS.map((i): [string, string] => [i, `${ITEM_NAME[i]} (${eggs(have(i))})`]) },
+      { type: 'num', id: 'qty', label: 'Damaged', suffix: 'pieces' },
+      { type: 'select', id: 'reason', label: 'Reason', options: [['Broken in handling', 'Broken in handling'], ['Customer return', 'Customer return'], ['Spoiled', 'Spoiled / expired'], ['Broken on the road', 'Broken on the road']] },
     ],
     onSubmit: async (v) => { await rpc('rpc_breakage', { p_loc: loc, p_item: v.item, p_qty: v.qty, p_reason: v.reason }); return 'Written off. Stock updated.'; },
   };
@@ -247,28 +353,110 @@ export function breakageForm(D: Dashboard, loc: string): FormSpec {
 /* ---------------- sales ---------------- */
 export function saleForm(D: Dashboard, loc: string): FormSpec {
   const st = stockNow(D, loc), s = D.settings;
-  const due = (v: V) => priceOf(D, { n: v.n, c: v.c, j: v.j });
+  const list = (v: V) => priceOf(D, gradesOf(v));
+  const due = (v: V) => (v.agreed > 0 ? v.agreed : list(v));
   return {
     title: 'Record sale',
     fields: [
-      { type: 'eggs', id: 'n', label: 'Normal eggs', hint: `On the shelf: ${eggs(st.n)} · ${n0(s.tray_n)} per tray, ${s.pc_n} per loose egg` },
-      { type: 'pair', fields: [{ type: 'num', id: 'c', label: 'Cracked', suffix: 'pc' }, { type: 'num', id: 'j', label: 'Jumbo', suffix: 'pc' }] },
-      { type: 'note', text: <div><span>Cracked {st.c} · jumbo {st.j} on the shelf. Cracked {n0(s.tray_c)}/tray or {s.pc_c} each, jumbo {s.pc_j} each.</span></div> },
+      ...dateFields(D),
+      ...gradeFields('', { hint: { N: `On the shelf: ${eggs(st.n)} · ${n0(s.tray_n)} a tray, ${s.pc_n} a piece`, B: `On the shelf: ${eggs(st.b)} · ${n0(s.tray_b)} a tray, ${s.pc_b} a piece`,
+                                   C: `On the shelf: ${eggs(st.c)} · ${n0(s.tray_c)} a tray, ${s.pc_c} a piece` } }),
+      { type: 'num', id: 'agreed', label: 'Agreed price (only if different)', suffix: 'KES', hint: 'Leave blank to charge the list price.' },
       { type: 'pair', fields: [{ type: 'num', id: 'cash', label: 'Cash', suffix: 'KES' }, { type: 'num', id: 'till', label: 'M-Pesa Till', suffix: 'KES' }] },
       { type: 'num', id: 'paybill', label: 'M-Pesa Paybill', suffix: 'KES' },
       { type: 'text', id: 'customer', label: 'Customer (optional)', placeholder: 'e.g. hotel or regular buyer' },
     ],
-    calc: (v) => { const d = due(v), paid = v.cash + v.till + v.paybill, rem = d - paid; return <>
+    calc: (v) => { const d = due(v), paid = v.cash + v.till + v.paybill, rem = d - paid, o = over(gradesOf(v), st); return <>
+      {o && <Bad l={o} r="Check" />}
       <div><span>Amount due</span><b className="big">{kes(d)}</b></div>
+      {v.agreed > 0 && v.agreed !== list(v) && <Row l="List price" r={`${kes(list(v))} (${v.agreed < list(v) ? 'discount' : 'premium'} ${kes(Math.abs(list(v) - v.agreed))})`} />}
       {d === 0 && paid === 0 ? <div><span className="muted">Enter the eggs sold, then how the customer paid</span></div>
         : d > 0 && rem === 0 ? <Ok>Payments add up to {kes(paid)}</Ok> : <Bad l={rem > 0 ? 'Still to allocate' : 'Over-allocated'} r={kes(Math.abs(rem))} />}</>; },
     buttons: (v, set) => <>{(['cash', 'till', 'paybill'] as const).map((m) => (
       <button key={m} type="button" className="btn sm alt" onClick={() => set({ cash: '', till: '', paybill: '', [m]: due(v) })}>All {m === 'cash' ? 'cash' : m === 'till' ? 'Till' : 'Paybill'}</button>))}</>,
     onSubmit: async (v) => {
-      const d = due(v);
+      const d = due(v), q = gradesOf(v);
+      if (!tot(q)) throw new Error('Enter the eggs sold.');
       if (v.cash + v.till + v.paybill !== d) throw new Error(`Payments (${kes(v.cash + v.till + v.paybill)}) must equal the amount due (${kes(d)}).`);
-      await rpc('rpc_sale', { p_loc: loc, p_n: v.n, p_c: v.c, p_j: v.j, p_cash: v.cash, p_till: v.till, p_paybill: v.paybill, p_customer: v.customer || null });
-      return `Sale of ${kes(d)} saved.`;
+      await rpc('rpc_record_sale', { p_loc: loc, p_n: q.n, p_b: q.b, p_j: q.j, p_c: q.c, p_cash: v.cash, p_till: v.till, p_paybill: v.paybill,
+        p_customer: v.customer || null, p_value: v.agreed > 0 ? v.agreed : null, p_date: dateArg(D, v) });
+      return `Sale of ${kes(d)} saved${onDay(D, v)}.`;
+    },
+  };
+}
+
+/**
+ * The shop's daily book in one sheet, the way the paper book is kept:
+ * opening + received - issued - damaged - sold = closing. Opening and
+ * received fill in from the records; the closing count shows any gap.
+ */
+export function shopDayForm(D: Dashboard, loc: string, day?: string): FormSpec {
+  const exp = balance(D, cashAcc(loc));
+  const book = (v: V) => dayLedger(D, loc, dayOf(D, v));
+  const all = (v: V) => v.grades === 'all';
+  const sold = (v: V) => ({ n: v.s_n || 0, b: all(v) ? v.s_b || 0 : 0, c: all(v) ? v.s_c || 0 : 0, j: all(v) ? v.s_j || 0 : 0 });
+  const iss = (v: V) => ({ n: v.i_n || 0, b: all(v) ? v.i_b || 0 : 0, c: all(v) ? v.i_c || 0 : 0, j: all(v) ? v.i_j || 0 : 0 });
+  const dmg = (v: V) => ({ n: v.d_n || 0, b: all(v) ? v.d_b || 0 : 0, c: all(v) ? v.d_c || 0 : 0, j: all(v) ? v.d_j || 0 : 0 });
+  const value = (v: V) => (v.s_value > 0 ? v.s_value : priceOf(D, sold(v)));
+  const expected = (v: V): Q => { const L = book(v); const k = (g: keyof Q) => L.close[g] - iss(v)[g] - dmg(v)[g] - sold(v)[g]; return { n: k('n'), b: k('b'), c: k('c'), j: k('j') }; };
+  const section = (p: string, title: string): Field[] => [
+    { type: 'note', text: <div className="dest"><b>{title}</b></div> },
+    { type: 'eggs', id: `${p}n`, label: 'Normal eggs' },
+    { type: 'group', show: all, fields: gradeFields(p, { only: ['B', 'C', 'J'] }) },
+  ];
+  const today = (v: V) => dayOf(D, v) === D.today;
+  return {
+    title: `Daily stock sheet · ${locName(D, loc)}`,
+    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Like the shop book. Opening stock and deliveries received fill in by themselves; enter what is not in the app yet, then the closing count.</p>,
+    fields: [
+      ...dateFields(D, undefined, day),
+      { type: 'select', id: 'grades', label: 'Grades', options: [['normal', 'Normal eggs only'], ['all', 'All grades (big, cracked, jumbo)']] },
+      ...section('i_', 'Issued (credit, bulk) not yet entered'),
+      { type: 'text', id: 'party', label: 'Issued to', placeholder: 'Name, or "Various credit customers"' },
+      ...section('d_', 'Damaged not yet entered'),
+      ...section('s_', 'Sales not yet entered'),
+      { type: 'pair', fields: [{ type: 'num', id: 's_cash', label: 'Cash', suffix: 'KES' }, { type: 'num', id: 's_till', label: 'M-Pesa', suffix: 'KES' }] },
+      { type: 'num', id: 's_value', label: 'Total received, if not the list price', suffix: 'KES', hint: 'Leave blank to use list prices.' },
+      { type: 'select', id: 'counted', label: 'Closing count', options: [['no', 'Not counted yet'], ['yes', 'I have counted the eggs left']] },
+      { type: 'group', show: (v) => v.counted === 'yes', fields: [
+        { type: 'eggs', id: 'c_n', label: 'Normal eggs counted' },
+        { type: 'group', show: all, fields: gradeFields('c_', { only: ['B', 'C', 'J'] }) }] },
+      { type: 'group', show: today, fields: [{ type: 'num', id: 'cash', label: 'Cash in the drawer (optional)', suffix: 'KES', hint: `Expected ${kes(exp)} before the cash sales above` }] },
+    ],
+    submit: 'Save the day',
+    calc: (v) => {
+      const L = book(v), sales = salesOn(D, [dayOf(D, v)], loc), e = expected(v), cnt = { n: v.c_n || 0, b: v.c_b || 0, c: v.c_c || 0, j: v.c_j || 0 };
+      const counted = v.counted === 'yes', gap = tot(cnt) - tot(e), money = v.s_cash + v.s_till, val = value(v);
+      return <>
+        <Row l={`Opening ${dlabel(dayOf(D, v))}`} r={eggs(tot(L.open))} />
+        {tot(L.recv) > 0 && <Row l="Received" r={eggs(tot(L.recv))} />}
+        {tot(L.out) > 0 && <Row l="Sent to outlets" r={eggs(tot(L.out))} />}
+        {tot(L.iss) + tot(iss(v)) > 0 && <Row l="Issued" r={eggs(tot(L.iss) + tot(iss(v)))} />}
+        {tot(L.brk) + tot(dmg(v)) > 0 && <Row l="Damaged" r={eggs(tot(L.brk) + tot(dmg(v)))} />}
+        <Row l={`Sold${sales.cnt ? ` (incl. ${sales.cnt} sale${sales.cnt === 1 ? '' : 's'} already entered)` : ''}`} r={`${eggs(tot(L.sold) + tot(sold(v)))} · ${kes(sales.value + (tot(sold(v)) ? val : 0))}`} />
+        <Row l="Closing by the book" r={eggs(tot(e))} />
+        {counted && (gap ? <Bad l={gap < 0 ? 'Count is short' : 'Count is over'} r={eggs(Math.abs(gap))} /> : <Ok>Count matches the book</Ok>)}
+        {tot(sold(v)) > 0 && money !== val && <Bad l="Cash + M-Pesa do not match the sales" r={`${kes(money)} of ${kes(val)}`} />}
+        {e.n < 0 && <Bad l="More eggs out than the book holds" r="Enter missing deliveries first" />}
+      </>;
+    },
+    onSubmit: async (v) => {
+      const p: Record<string, unknown> = {};
+      if (tot(dmg(v))) p.damaged = dmg(v);
+      if (tot(iss(v))) { if (!String(v.party ?? '').trim()) throw new Error('Say who the eggs were issued to.'); p.issued = { ...iss(v), party: String(v.party).trim(), note: 'Daily sheet' }; }
+      if (tot(sold(v))) {
+        if (v.s_cash + v.s_till !== value(v)) throw new Error(`Cash and M-Pesa (${kes(v.s_cash + v.s_till)}) must add up to the sales (${kes(value(v))}).`);
+        p.sales = { ...sold(v), cash: v.s_cash, till: v.s_till, paybill: 0, value: v.s_value > 0 ? v.s_value : null };
+      }
+      const cnt = { n: v.c_n || 0, b: v.c_b || 0, c: v.c_c || 0, j: v.c_j || 0 };
+      if (v.counted === 'yes') p.closing = all(v) ? cnt : { ...cnt, b: Math.max(0, expected(v).b), c: Math.max(0, expected(v).c), j: Math.max(0, expected(v).j) };
+      if (today(v) && v.cash > 0) p.cash_counted = v.cash;
+      if (!Object.keys(p).length) throw new Error('Enter at least one figure.');
+      const r = await rpc<{ closing?: { adj_n: number; adj_b: number; adj_c: number; adj_j: number }; cash?: { diff: number } }>('rpc_shop_day', { p_loc: loc, p_date: dateArg(D, v), p });
+      const msgs: string[] = [];
+      if (r.closing) { const d = r.closing.adj_n + r.closing.adj_b + r.closing.adj_c + r.closing.adj_j; msgs.push(d ? `stock ${d < 0 ? 'short' : 'over'} by ${eggs(Math.abs(d))}` : 'stock matches'); }
+      if (r.cash) msgs.push(r.cash.diff ? `cash ${r.cash.diff < 0 ? 'short' : 'over'} ${kes(Math.abs(r.cash.diff))}` : 'cash matches');
+      return `Day saved${onDay(D, v)}${msgs.length ? `: ${msgs.join(', ')}` : ''}.`;
     },
   };
 }
@@ -319,28 +507,27 @@ export function moveForm(D: Dashboard, loc: string | null): FormSpec {
 /* ---------------- counts ---------------- */
 export function countForm(D: Dashboard, loc: string, kind: 'open' | 'close'): FormSpec {
   const st = stockNow(D, loc), acc = cashAcc(loc), exp = balance(D, acc);
-  const fields: Field[] = [
-    { type: 'eggs', id: 'n', label: 'Normal eggs counted', def: Math.max(0, st.n) },
-    { type: 'pair', fields: [{ type: 'num', id: 'c', label: 'Cracked counted', suffix: 'pc', def: Math.max(0, st.c) }, { type: 'num', id: 'j', label: 'Jumbo counted', suffix: 'pc', def: Math.max(0, st.j) }] },
-  ];
+  const fields: Field[] = [...gradeFields('', { def: { n: Math.max(0, st.n), b: Math.max(0, st.b), c: Math.max(0, st.c), j: Math.max(0, st.j) } })];
   if (kind === 'close') fields.push({ type: 'num', id: 'cash', label: 'Cash in the drawer', suffix: 'KES', def: Math.max(0, exp), hint: `Expected ${kes(exp)}` });
   return {
     title: kind === 'open' ? 'Opening count' : 'Close the day',
-    intro: <div className="calc"><Row l="Book stock" r={`${eggs(st.n)} normal · ${st.c} cracked · ${st.j} jumbo`} /></div>,
+    intro: <div className="calc"><Row l="Book stock" r={mix(st)} /></div>,
     fields, submit: kind === 'open' ? 'Open the day' : 'Close the day',
-    calc: (v) => { const d = v.n + v.c + v.j - tot(st); return <>
+    calc: (v) => { const d = tot(gradesOf(v)) - tot(st); return <>
       {d ? <Bad l="Stock variance" r={eggs(d)} /> : <Ok>Stock matches the book</Ok>}
       {kind === 'close' && (v.cash - exp ? <Bad l={`Cash ${v.cash < exp ? 'short' : 'over'}`} r={kes(Math.abs(v.cash - exp))} /> : <Ok>Cash matches</Ok>)}</>; },
     onSubmit: async (v) => {
+      const q = gradesOf(v);
       if (kind === 'open') {
-        const r = await rpc<{ adj_n: number; adj_c: number; adj_j: number }>('rpc_stock_count', { p_loc: loc, p_kind: 'open', p_n: v.n, p_c: v.c, p_j: v.j });
-        const d = r.adj_n + r.adj_c + r.adj_j;
+        const r = await rpc<{ adj_n: number; adj_b: number; adj_c: number; adj_j: number }>('rpc_count_stock', { p_loc: loc, p_kind: 'open', p_n: q.n, p_b: q.b, p_j: q.j, p_c: q.c });
+        const d = r.adj_n + r.adj_b + r.adj_c + r.adj_j;
         return d ? `Day opened. Stock off by ${eggs(d)}; the manager has been told.` : 'Day opened. Stock matches.';
       }
-      const r = await rpc<{ adj_n: number; adj_c: number; adj_j: number; diff: number }>('rpc_close_day', { p_loc: loc, p_n: v.n, p_c: v.c, p_j: v.j, p_cash: v.cash });
-      const d = r.adj_n + r.adj_c + r.adj_j, msgs = [];
+      const r = await rpc<{ closing: { adj_n: number; adj_b: number; adj_c: number; adj_j: number }; cash: { diff: number } }>('rpc_shop_day',
+        { p_loc: loc, p_date: null, p: { closing: q, cash_counted: v.cash } });
+      const d = r.closing.adj_n + r.closing.adj_b + r.closing.adj_c + r.closing.adj_j, msgs = [];
       if (d) msgs.push(`stock off by ${eggs(d)}`);
-      if (r.diff) msgs.push(`cash ${r.diff < 0 ? 'short' : 'over'} ${kes(Math.abs(r.diff))}`);
+      if (r.cash?.diff) msgs.push(`cash ${r.cash.diff < 0 ? 'short' : 'over'} ${kes(Math.abs(r.cash.diff))}`);
       return msgs.length ? `Day closed: ${msgs.join(', ')}.` : 'Day closed. Everything matches.';
     },
   };
@@ -428,19 +615,19 @@ export const staffForm = (D: Dashboard, s?: StaffLite): FormSpec => ({
 
 export function openingForm(D: Dashboard): FormSpec {
   const fields: Field[] = [{ type: 'note', text: <div><span>Count everything on go-live morning and enter the real figures. Each entry replaces what the system shows now.</span></div> }];
-  for (const l of D.locations) fields.push({ type: 'eggs', id: `n_${l.id}`, label: `${l.name}: normal eggs`, def: Math.max(0, stockNow(D, l.id).n) },
-    { type: 'pair', fields: [{ type: 'num', id: `c_${l.id}`, label: 'Cracked', suffix: 'pc', def: Math.max(0, stockNow(D, l.id).c) }, { type: 'num', id: `j_${l.id}`, label: 'Jumbo', suffix: 'pc', def: Math.max(0, stockNow(D, l.id).j) }] });
+  for (const l of D.locations) { const st = stockNow(D, l.id); fields.push({ type: 'note', text: <div className="dest"><b>{l.name}</b></div> },
+    ...gradeFields(`${l.id}_`, { def: { n: Math.max(0, st.n), b: Math.max(0, st.b), c: Math.max(0, st.c), j: Math.max(0, st.j) } })); }
   for (const a of D.accounts) fields.push({ type: 'num', id: `m_${a.id}`, label: a.name, suffix: 'KES', def: balance(D, a.id) });
-  fields.push({ type: 'pair', fields: [{ type: 'num', id: 'feed', label: 'Feed in store', suffix: 'kg', def: D.feed_stock }, { type: 'num', id: 'tank', label: 'Water in tank', suffix: 'L', def: D.tank?.litres ?? '' }] });
+  fields.push({ type: 'pair', fields: [{ type: 'num', id: 'feed', label: 'Feed in store', suffix: 'bags', step: 0.5, def: Math.round(D.feed_stock / D.settings.bag_kg * 10) / 10 }, { type: 'num', id: 'tank', label: 'Water in tank', suffix: 'L', def: D.tank?.litres ?? '' }] });
   for (const m of D.medicines.filter((x) => x.active)) fields.push({ type: 'num', id: `med_${m.id}`, label: `${m.name}`, suffix: m.unit, def: m.stock });
   return {
     title: 'Opening balances', fields, submit: 'Save opening balances',
     onSubmit: async (v) => {
       const stock: Record<string, Q> = {}, money: Record<string, number> = {}, medicines: Record<string, number> = {};
-      for (const l of D.locations) stock[l.id] = { n: v[`n_${l.id}`], c: v[`c_${l.id}`], j: v[`j_${l.id}`] };
+      for (const l of D.locations) stock[l.id] = gradesOf(v, `${l.id}_`);
       for (const a of D.accounts) money[a.id] = v[`m_${a.id}`];
       for (const m of D.medicines.filter((x) => x.active)) medicines[String(m.id)] = v[`med_${m.id}`];
-      const p: Record<string, unknown> = { stock, money, medicines, feed_kg: v.feed };
+      const p: Record<string, unknown> = { stock, money, medicines, feed_kg: v.feed * D.settings.bag_kg };
       if (v.tank > 0) p.tank_l = v.tank;
       await rpc('rpc_opening_balances', { p });
       return 'Opening balances saved. Dashboards now start from these figures.';

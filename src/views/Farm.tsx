@@ -2,25 +2,28 @@
 import { useState } from 'react';
 import { rpc } from '../lib/api';
 import { addDays, daysBetween, dlabel, eggs, n0, pct, range } from '../lib/format';
-import { collected, deaths, hensNow, houseAge, layRate, stockNow, tankInfo, tot, waterFeedRatio, waterOn, waterTrend } from '../lib/metrics';
+import { collected, damagedAtFarm, deaths, hensNow, houseAge, layRate, mix, produced, stockNow, tankInfo, waterFeedRatio, waterOn, waterTrend } from '../lib/metrics';
 import {
-  collectForm, dispatchForm, feedInForm, feedUseForm, medForm, medicineForm, mortForm, scheduleForm, tankForm, waterIntakeForm,
+  collectForm, dispatchForm, feedInForm, feedUseForm, houseDayForm, medForm, medicineForm, mortForm, scheduleForm, tankForm, waterIntakeForm,
 } from '../forms/forms';
 import { Icon } from '../ui/icons';
 import { useUI } from '../ui/ui';
 import { Card, Delta, Empty, FeedCard, Seg, TankCard, Tile } from '../ui/widgets';
 import { FeedStockChart, FeedUseChart, TankChart, WaterChart, houseColor } from './charts';
 import { RecordList } from './common';
+import { ClerkSteps } from './Journey';
 import type { ViewProps } from './Management';
 
 export function ClerkHome({ D, version, go }: ViewProps) {
   const ui = useUI(), farm = stockNow(D, 'FARM');
   if (!D.houses.some((h) => h.birds_at_start > 0)) return <div className="banner warn"><div><b>No hens set up yet</b><p>The owner or farm manager needs to enter each house's hen count under Settings → Houses.</p></div></div>;
   return <>
+    <ClerkSteps D={D} />
     <FeedCard D={D} actions={<><button className="btn sm" onClick={() => ui.openForm(feedUseForm(D))}><Icon name="scoop" />Feed used</button>
       <button className="btn sm alt" onClick={() => ui.openForm(feedInForm(D))}><Icon name="sack" />Feed received</button></>} />
     <div className="tiles">
       <Tile icon="egg" label="Egg collection" color="--l-van" onClick={() => ui.openForm(collectForm(D))} />
+      <Tile icon="list" label="Daily house sheet" color="--l-rayan" onClick={() => ui.openForm(houseDayForm(D))} />
       <Tile icon="scoop" label="Feed used" color="--f-low" onClick={() => ui.openForm(feedUseForm(D))} />
       <Tile icon="drop" label="Water drunk" color="--info" onClick={() => ui.openForm(waterIntakeForm(D))} />
       <Tile icon="tank" label="Tank level" color="--l-tuala" onClick={() => ui.openForm(tankForm(D))} />
@@ -31,17 +34,18 @@ export function ClerkHome({ D, version, go }: ViewProps) {
     </div>
     <div className="grid2">
       <Card title="Today by house" aside={<span className="muted">{dlabel(D.today)}</span>}><div className="list">{D.houses.map((h, i) => {
-        const q = collected(D, [D.today], h.id), hens = hensNow(D, h.id), w = waterTrend(D, h.id);
+        const q = collected(D, [D.today], h.id), dmg = damagedAtFarm(D, [D.today], h.id), laid = produced(D, [D.today], h.id), hens = hensNow(D, h.id), w = waterTrend(D, h.id);
         return <div className="li" key={h.id}><span className="av" style={{ background: `var(${houseColor(i)})` }}><Icon name="egg" /></span>
-          <div className="mid"><b>{h.name}</b><small>{hens} hens · {q.c} cracked · {q.j} jumbo</small><small>Water today {n0(w.today)} L{w.avg ? ` · usual ${n0(w.avg)} L/day` : ''}</small></div>
-          <div className="end">{eggs(tot(q))}<small>{hens ? pct(tot(q) / hens) : '–'} so far</small></div></div>; })}</div></Card>
+          <div className="mid"><b>{h.name}</b><small>{n0(hens)} hens · {mix(q)}{dmg ? ` · ${dmg} damaged` : ''}</small><small>Water today {n0(w.today)} L{w.avg ? ` · usual ${n0(w.avg)} L/day` : ''}</small></div>
+          <div className="end">{eggs(laid)}<small>{hens ? pct(laid / hens) : '–'} so far</small></div></div>; })}</div></Card>
       <TankCard D={D} actions={<button className="btn sm alt" onClick={() => ui.openForm(tankForm(D))}><Icon name="tank" />Record tank level</button>} />
     </div>
     <Card title="Farm egg store" aside={<span className="muted">available to send</span>}>
-      <div className="kpis" style={{ gridTemplateColumns: 'repeat(3,minmax(0,1fr))' }}>
+      <div className="kpis">
         <div className="kpi"><div className="lbl">Normal</div><div className="val">{eggs(farm.n)}</div></div>
-        <div className="kpi"><div className="lbl">Cracked</div><div className="val">{farm.c} pc</div></div>
+        <div className="kpi"><div className="lbl">Big</div><div className="val">{eggs(farm.b)}</div></div>
         <div className="kpi"><div className="lbl">Jumbo</div><div className="val">{farm.j} pc</div></div>
+        <div className="kpi"><div className="lbl">Cracked</div><div className="val">{eggs(farm.c)}</div></div>
       </div></Card>
     <Card title="Recent records" aside={<button className="lnk" onClick={() => go('records')}>All records</button>}>
       <RecordList D={D} version={version} loc="FARM" canVoid={false} limit={8} /></Card>

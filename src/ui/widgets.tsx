@@ -62,12 +62,12 @@ export function FeedCard({ D, actions }: { D: Dashboard; actions?: ReactNode }) 
       <div className="head">
         <div><div className="muted" style={{ fontSize: 13, fontWeight: 600 }}>Feed buffer · Layers feed</div>
           <div className="bigpct" style={{ color: `var(${f.band.color})` }}>{pct(f.level, 0)}</div>
-          <div className="kg">{n0(f.stock)} kg in store of {n0(f.target)} kg weekly buffer</div></div>
+          <div className="kg">{n0(f.stockBags)} bags in store of {n0(f.targetBags)}-bag weekly buffer</div></div>
         <span className={`chip ${sevClass(f.band.sev)}`}><span className="dot" />{f.band.label}</span>
       </div>
       <Gauge level={f.level} b={f.band} label="Feed level" />
       <div className="facts">
-        <div><b>{f.cover.toFixed(1)} days</b><span>of feed at {n0(f.daily)} kg/day{f.estimated ? ' (plan)' : ''}</span></div>
+        <div><b>{f.cover.toFixed(1)} days</b><span>of feed at {f.dailyBags.toFixed(1)} bags/day{f.estimated ? ' (plan)' : ''}</span></div>
         <div><b>{f.bags ? `${f.bags} bags` : 'None'}</b><span>to order for full buffer</span></div>
         <div><b>{f.level < 0.25 ? 'Now' : dshort(f.noneDate)}</b><span>reaches No buffer if not restocked</span></div>
       </div>
