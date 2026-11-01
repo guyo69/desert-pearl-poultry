@@ -136,7 +136,8 @@ export function damagedAtFarm(D: Dashboard, days: string[], house?: string) {
 export const produced = (D: Dashboard, days: string[], house?: string) => tot(collected(D, days, house)) + damagedAtFarm(D, days, house);
 export function layRate(D: Dashboard, days: string[], house?: string) {
   const set = new Set(days);
-  const rows = D.farm_daily.filter((r) => set.has(r.d) && (!house || r.house_id === house));
+  // only days with a collection entered: a day nobody entered is missing, not a day of no eggs
+  const rows = D.farm_daily.filter((r) => set.has(r.d) && (!house || r.house_id === house) && tot(r) + (r.dmg ?? 0) > 0);
   const hens = sum(rows, (r) => r.hens);
   return hens ? sum(rows, (r) => tot(r) + (r.dmg ?? 0)) / hens : NaN;
 }
