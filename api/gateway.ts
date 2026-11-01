@@ -10,9 +10,14 @@
 //
 // Routes (?r=...):
 //   auth/<action>   POST  sign-in, passwords, two-step   -> edge function `auth`
-//   rpc/<name>      POST  dashboard, data_version, shop_day, activity, rpc_*, security_log -> database
+//   rpc/<name>      POST  dashboard, data_version, shop_day, gaps, activity, rpc_*, security_log -> database
 //   admin           POST  owner's staff tools             -> edge function `staff-admin`
 //   push-key        GET   public key for phone notifications
+//   optout          GET   confirm page for the one-click link in digest emails (no sign-in)
+//                   POST  turn the emails off -> edge function `digest-optout`; also the
+//                         RFC 8058 one-click POST that mail apps send. Exempt from the
+//                         X-DPV / same-origin checks: the signed link is the permission,
+//                         and it can only switch emails off.
 //
 // Environment: SUPABASE_URL, SUPABASE_ANON_KEY, DPV_GATEWAY_SECRET
 // (the value of app_secrets.gateway_secret in the database).
@@ -26,7 +31,7 @@ const MAX_BODY = 64 * 1024;
 const AUTH_ACTIONS = new Set(['challenge', 'login', 'status', 'set_password', 'mfa_enroll', 'mfa_confirm', 'mfa_verify',
   'backup_codes', 'mfa_disable', 'logout', 'logout_all', 'bootstrap']);
 const PUBLIC_AUTH = new Set(['challenge', 'login', 'bootstrap']);
-const RPC = /^(rpc_[a-z_]{1,40}|dashboard|activity|security_log|data_version|shop_day)$/;
+const RPC = /^(rpc_[a-z_]{1,40}|dashboard|activity|security_log|data_version|shop_day|gaps)$/;
 
 interface Env { url: string; anon: string; secret: string }
 type Tokens = { access_token: string; refresh_token: string };
@@ -118,10 +123,41 @@ async function readBody(req: Request): Promise<Record<string, unknown> | null> {
   try { const v = JSON.parse(text); return v && typeof v === 'object' && !Array.isArray(v) ? v : null; } catch { return null; }
 }
 
+const OPTOUT_STAFF = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const OPTOUT_TOKEN = /^v1\.[0-9a-f]{64}$/;
+
+function page(status: number, title: string, body: string): Response {
+  const esc = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
+    `<meta name="robots" content="noindex"><title>${esc(title)}</title></head><body><main><h1>${esc(title)}</h1>${body}</main></body></html>`;
+  return new Response(html, { status, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
+}
+
+/** The one-click opt-out link from digest emails. GET only shows a button, so link scanners cannot unsubscribe anyone. */
+async function optout(e: Env, req: Request, url: URL): Promise<Response> {
+  const staff = url.searchParams.get('s') ?? '', token = url.searchParams.get('t') ?? '';
+  if (!OPTOUT_STAFF.test(staff) || !OPTOUT_TOKEN.test(token)) return page(400, 'This link is not valid', '<p>Ask the owner to change your email settings.</p>');
+  if (req.method === 'GET') {
+    const action = `/api/gateway?r=optout&amp;s=${staff}&amp;t=${token}`;
+    return page(200, 'Stop Desert Pearl emails?', '<p>You will no longer get the weekly digest or reminder emails. The owner can turn them back on.</p>' +
+      `<form method="post" action="${action}"><input type="hidden" name="confirm" value="1"><button type="submit">Stop the emails</button></form>`);
+  }
+  if (req.method !== 'POST') return reply(405, { error: 'Use GET or POST' });
+  if ((await req.text()).length > 1024) return reply(413, { error: 'Request too large.' });
+  const r = await fetch(`${e.url}/functions/v1/digest-optout`, {
+    method: 'POST', headers: upstreamHeaders(e, req, null), body: JSON.stringify({ staff, token }),
+  });
+  if (r.ok) return page(200, 'Emails stopped', '<p>You will no longer get Desert Pearl emails. The owner can turn them back on.</p>');
+  return page(r.status === 429 ? 429 : 400, r.status === 429 ? 'Too many attempts' : 'This link is not valid',
+    '<p>Try again later, or ask the owner to change your email settings.</p>');
+}
+
 export default async function handler(req: Request): Promise<Response> {
   const e = env();
   if (!e) return reply(500, { error: 'The server is not configured. See README: Vercel environment variables.' });
-  const route = new URL(req.url).searchParams.get('r') ?? '';
+  const reqUrl = new URL(req.url);
+  const route = reqUrl.searchParams.get('r') ?? '';
+  if (route === 'optout') return optout(e, req, reqUrl);
   const bad = badOrigin(req);
   if (bad) return reply(403, { error: 'Request refused.', detail: bad });
 

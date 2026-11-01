@@ -5,6 +5,19 @@ import { TEMP_PASSWORD, derivedPassword, staffEmail } from './util.ts';
 export const ROLES = ['owner', 'manager', 'clerk', 'pos'];
 export const USERNAME = /^[a-z0-9][a-z0-9._-]{2,31}$/;
 
+/** Same rule as the staff_email_shape check in the database. */
+export const EMAIL = /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
+/** undefined = not sent (keep), null = clear, string = set. Throws a plain sentence when the address is not usable. */
+export function emailOf(v: unknown): string | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  if (typeof v !== 'string') throw new Error('Enter an email address or leave it blank.');
+  const e = v.trim().toLowerCase();
+  if (!e) return null;
+  if (e.length < 6 || e.length > 254 || !EMAIL.test(e)) throw new Error('That email address does not look right.');
+  return e;
+}
+
 export const DEFAULT_TEAM = [
   { username: 'owner', display_name: 'Owner', role: 'owner', location_id: null },
   { username: 'manager', display_name: 'Farm Manager', role: 'manager', location_id: 'FARM' },

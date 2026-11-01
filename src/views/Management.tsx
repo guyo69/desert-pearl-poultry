@@ -15,7 +15,7 @@ import { MissingDays } from './Journey';
 
 export interface ViewProps { D: Dashboard; version: number; go: (tab: string) => void }
 
-export function Overview({ D, go }: ViewProps) {
+export function Overview({ D, go, version }: ViewProps) {
   const ui = useUI();
   const y = addDays(D.today, -1), w1 = range(addDays(D.today, -7), y), w0 = range(addDays(D.today, -14), addDays(D.today, -8));
   const cT = produced(D, [D.today]), cY = produced(D, [y]);
@@ -24,7 +24,7 @@ export function Overview({ D, go }: ViewProps) {
   const A = alertsFor(D);
   return <>
     <div className="sample"><div><h2>{dlabel(D.today)}</h2><div className="muted">{D.me.role === 'owner' ? 'All five sales points' : 'Central Farm and sales points'} · {n0(hensNow(D))} hens</div></div></div>
-    <MissingDays D={D} />
+    <MissingDays D={D} version={version} />
     <div className="kpis">
       <Kpi label="Eggs collected today" value={eggs(cT)} sub={`Yesterday ${eggs(cY)}`} />
       <Kpi label="Lay rate · 7 days" value={pct(layRate(D, w1))} sub={<><Delta a={layRate(D, w1)} b={layRate(D, w0)} pts /> vs week before</>} />
@@ -53,12 +53,12 @@ export function Overview({ D, go }: ViewProps) {
   </>;
 }
 
-export function Alerts({ D }: ViewProps) {
+export function Alerts({ D, version }: ViewProps) {
   const ui = useUI(), A = alertsFor(D);
   const houses = D.houses.map((h) => ({ h, q: collected(D, [D.today], h.id), hens: hensNow(D, h.id), w: waterTrend(D, h.id) }));
   return <>
     <div className="sample"><div><h2>{D.me.role === 'manager' ? `Hello, ${D.me.display_name}` : 'Alerts'}</h2><div className="muted">{dlabel(D.today)} · Central Farm · {n0(hensNow(D))} hens</div></div></div>
-    {D.me.role === 'manager' && <MissingDays D={D} />}
+    {D.me.role === 'manager' && <MissingDays D={D} version={version} />}
     <Card title="Alerts" aside={<span className={`chip ${A.some((a) => a.sev === 'red' || a.sev === 'orange') ? 'sev-orange' : 'sev-info'}`}>{A.length} open</span>}><AlertList list={A} /></Card>
     <div className="grid2"><FeedCard D={D} /><TankCard D={D} /></div>
     <div className="grid2">

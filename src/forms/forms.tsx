@@ -75,6 +75,8 @@ export function houseDayForm(D: Dashboard, day?: string): FormSpec {
     { type: 'pair', fields: [{ type: 'num', id: `${h.id}_deaths`, label: 'Deaths', suffix: 'birds' }, { type: 'num', id: `${h.id}_feed`, label: 'Feed given', suffix: 'bags', step: 0.5 }] },
     { type: 'num', id: `${h.id}_water`, label: 'Water drunk', suffix: 'L' },
   );
+  fields.push({ type: 'select', id: 'no_deaths', label: 'Deaths', def: 'yes',
+    options: [['yes', 'No deaths in houses where Deaths is blank'], ['no', 'Not checked yet']] });
   const lines = (v: V) => D.houses.map((h) => {
     const day = dayOf(D, v), q = gradesOf(v, `${h.id}_`), dmg = v[`${h.id}_dmg`] || 0, deaths = v[`${h.id}_deaths`] || 0;
     const row = D.farm_daily.find((r) => r.house_id === h.id && r.d === day);
@@ -102,6 +104,11 @@ export function houseDayForm(D: Dashboard, day?: string): FormSpec {
       if (!rows.length) throw new Error('Enter at least one figure.');
       if (rows.some((r) => neg(r) || r.dmg < 0 || r.deaths < 0)) throw new Error('Numbers cannot be negative.');
       const r = await rpc<{ saved: number }>('rpc_house_day', { p_date: dateArg(D, v), p_rows: rows });
+      // "nothing happened" is recorded too, so the reports can tell it from "not entered"
+      if (v.no_deaths === 'yes') {
+        await Promise.all(lines(v).filter((x) => !x.deaths).map((x) =>
+          rpc('rpc_mark_day', { p_kind: 'no_deaths', p_house: x.h.id, p_date: dateArg(D, v) }).catch(() => null)));
+      }
       return `House sheet saved${onDay(D, v)}: ${r.saved} record${r.saved === 1 ? '' : 's'}.`;
     },
   };
@@ -405,11 +412,15 @@ export function shopDayForm(D: Dashboard, loc: string, day?: string): FormSpec {
     { type: 'group', show: all, fields: gradeFields(p, { only: ['B', 'C', 'J'] }) },
   ];
   const today = (v: V) => dayOf(D, v) === D.today;
+  const traded = (v: V) => (v.trading ?? 'open') === 'open';
   return {
     title: `Daily stock sheet · ${locName(D, loc)}`,
     intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Like the shop book. Opening stock and deliveries received fill in by themselves; enter what is not in the app yet, then the closing count.</p>,
     fields: [
       ...dateFields(D, undefined, day),
+      { type: 'select', id: 'trading', label: 'The day', options: [['open', 'We traded'], ['closed', 'Closed all day'],
+          ...(isMgmt(D) ? [] : [['closed_y', 'We were closed yesterday']] as [string, string][])] },
+      { type: 'group', show: traded, fields: [
       { type: 'select', id: 'grades', label: 'Grades', options: [['normal', 'Normal eggs only'], ['all', 'All grades (big, cracked, jumbo)']] },
       ...section('i_', 'Issued (credit, bulk) not yet entered'),
       { type: 'text', id: 'party', label: 'Issued to', placeholder: 'Name, or "Various credit customers"' },
@@ -422,9 +433,11 @@ export function shopDayForm(D: Dashboard, loc: string, day?: string): FormSpec {
         { type: 'eggs', id: 'c_n', label: 'Normal eggs counted' },
         { type: 'group', show: all, fields: gradeFields('c_', { only: ['B', 'C', 'J'] }) }] },
       { type: 'group', show: today, fields: [{ type: 'num', id: 'cash', label: 'Cash in the drawer (optional)', suffix: 'KES', hint: `Expected ${kes(exp)} before the cash sales above` }] },
+      ] },
     ],
     submit: 'Save the day',
     calc: (v) => {
+      if (!traded(v)) return <div><span>No sales or counts are expected for a closed day. The morning reminder stops asking for it.</span></div>;
       const L = book(v), sales = salesOn(D, [dayOf(D, v)], loc), e = expected(v), cnt = { n: v.c_n || 0, b: v.c_b || 0, c: v.c_c || 0, j: v.c_j || 0 };
       const counted = v.counted === 'yes', gap = tot(cnt) - tot(e), money = v.s_cash + v.s_till, val = value(v);
       return <>
@@ -441,6 +454,11 @@ export function shopDayForm(D: Dashboard, loc: string, day?: string): FormSpec {
       </>;
     },
     onSubmit: async (v) => {
+      if (!traded(v)) {
+        const date = v.trading === 'closed_y' ? addDays(D.today, -1) : dateArg(D, v);
+        await rpc('rpc_mark_day', { p_kind: 'closed', p_loc: loc, p_date: date });
+        return `${locName(D, loc)} marked closed for ${dlabel(date ?? D.today)}.`;
+      }
       const p: Record<string, unknown> = {};
       if (tot(dmg(v))) p.damaged = dmg(v);
       if (tot(iss(v))) { if (!String(v.party ?? '').trim()) throw new Error('Say who the eggs were issued to.'); p.issued = { ...iss(v), party: String(v.party).trim(), note: 'Daily sheet' }; }
@@ -594,7 +612,7 @@ export const scheduleForm = (D: Dashboard, e?: ScheduleItem): FormSpec => ({
 });
 
 const ROLE_OPTS: [string, string][] = [['pos', 'Sales point attendant / van driver'], ['clerk', 'Production clerk'], ['manager', 'Farm manager'], ['owner', 'Owner']];
-export const staffForm = (D: Dashboard, s?: StaffLite): FormSpec => ({
+export const staffForm = (D: Dashboard, s?: StaffLite & { email?: string | null; digest_enabled?: boolean; digest_opted_out_at?: string | null }): FormSpec => ({
   title: s ? `Edit ${s.display_name}` : 'Add staff member',
   intro: !s ? <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>They sign in with this username and the temporary password <b>0000</b>. It works once, for 72 hours, and they must choose their own password straight away. Owners and farm managers also set up two-step sign-in.</p> : undefined,
   fields: [
@@ -603,12 +621,18 @@ export const staffForm = (D: Dashboard, s?: StaffLite): FormSpec => ({
     { type: 'select', id: 'role', label: 'Role', options: ROLE_OPTS, def: s?.role ?? 'pos' },
     { type: 'select', id: 'loc', label: 'Location', options: D.locations.map((l): [string, string] => [l.id, l.name]), def: s?.location_id ?? 'FARM' },
     ...(s ? [{ type: 'select', id: 'active', label: 'Access', options: [['true', 'Active'], ['false', 'Disabled']], def: String(s.active) } as Field] : []),
+    { type: 'text', id: 'email', label: 'Email (optional, for the weekly digest)', def: s?.email ?? '', placeholder: 'name@example.com' },
+    { type: 'select', id: 'digest', label: 'Weekly digest and reminder emails', options: [['true', 'On'], ['false', 'Off']], def: String(s?.digest_enabled ?? true) },
+    ...(s?.digest_opted_out_at && !s.digest_enabled ? [{ type: 'note', text: <div><span>They turned the emails off from the link in an email. Only switch them back on if they ask.</span></div> } as Field] : []),
   ],
   onSubmit: async (v) => {
     const username = String(v.username ?? '').trim().toLowerCase();
     if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(username)) throw new Error('Username: 3 to 32 lowercase letters, numbers, dots or dashes.');
-    if (s) await staffAdmin({ action: 'update', staff_id: s.id, username, display_name: v.name, role: v.role, location_id: v.role === 'owner' ? null : v.loc, active: v.active === 'true' });
-    else await staffAdmin({ action: 'create', username, display_name: v.name, role: v.role, location_id: v.role === 'owner' ? null : v.loc });
+    const email = String(v.email ?? '').trim().toLowerCase();
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('That email address does not look right.');
+    const mail = { email, digest_enabled: v.digest === 'true' };
+    if (s) await staffAdmin({ action: 'update', staff_id: s.id, username, display_name: v.name, role: v.role, location_id: v.role === 'owner' ? null : v.loc, active: v.active === 'true', ...mail });
+    else await staffAdmin({ action: 'create', username, display_name: v.name, role: v.role, location_id: v.role === 'owner' ? null : v.loc, ...mail });
     return s ? (v.active === 'false' && s.active ? `${v.name} is disabled and signed out.` : 'Staff member updated.') : `${v.name} added. Username ${username}, temporary password 0000 (valid 72 hours).`;
   },
 });
