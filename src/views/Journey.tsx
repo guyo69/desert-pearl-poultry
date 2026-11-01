@@ -1,7 +1,8 @@
 // The day's steps for each role, and the days that still have gaps.
-// Everything is worked out from the dashboard: nothing extra is stored.
-import type { ReactNode } from 'react';
-import { addDays, dlabel, eggs, range } from '../lib/format';
+// Steps are worked out from the dashboard; gaps come from the server's completeness check.
+import { type ReactNode, useEffect, useState } from 'react';
+import { type Gap, loadGaps } from '../lib/api';
+import { dlabel, eggs } from '../lib/format';
 import { feedUsed, locName, produced, salesOn, tankInfo, waterOn } from '../lib/metrics';
 import type { Dashboard } from '../lib/types';
 import {
@@ -61,31 +62,25 @@ export function ShopSteps({ D, loc }: { D: Dashboard; loc: string }) {
   return <Steps title="Today's steps" steps={steps} aside={<button className="lnk" onClick={() => ui.openForm(shopDayForm(D, loc))}>Daily stock sheet</button>} />;
 }
 
-/** Owner and farm manager: days in the last two weeks with something missing, each one tap away from the sheet that fills it. */
-export function MissingDays({ D }: { D: Dashboard }) {
+/**
+ * Owner and farm manager: days in the last two weeks with something missing,
+ * from the same server check that sends the morning reminders (closed days
+ * and regular closing days are already left out). Each line opens the sheet
+ * that fills it.
+ */
+export function MissingDays({ D, version }: { D: Dashboard; version?: number }) {
   const ui = useUI();
-  const start = [D.settings.go_live ?? D.from, addDays(D.today, -14), D.from].sort().pop()!;
-  const days = start < D.today ? range(start, addDays(D.today, -1)).reverse() : [];
-  const gaps: { day: string; where: string; what: string; open: () => void }[] = [];
-  for (const d of days) {
-    const houses = D.houses.filter((h) => h.start_date <= d && !produced(D, [d], h.id));
-    const noFeed = D.houses.some((h) => h.start_date <= d) && feedUsed(D, [d]) <= 0;
-    if (houses.length || noFeed) gaps.push({ day: d, where: 'Central Farm',
-      what: [houses.length && `no eggs for ${houses.map((h) => h.name).join(', ')}`, noFeed && 'no feed used'].filter(Boolean).join(' · '), open: () => ui.openForm(houseDayForm(D, d)) });
-    for (const l of D.locations.filter((x) => x.id !== 'FARM')) {
-      const sold = salesOn(D, [d], l.id).cnt > 0, counted = has(D, l.id, d, 'adj');
-      if (!sold && !counted) gaps.push({ day: d, where: l.name, what: 'no sales or count (closed?)', open: () => ui.openForm(shopDayForm(D, l.id, d)) });
-      else if (!counted) gaps.push({ day: d, where: l.name, what: 'no closing count', open: () => ui.openForm(shopDayForm(D, l.id, d)) });
-    }
-  }
-  if (!gaps.length) return null;
+  const [gaps, setGaps] = useState<Gap[] | null>(null);
+  useEffect(() => { loadGaps(14).then((g) => setGaps(g.slice().reverse())).catch(() => setGaps([])); }, [version]);
+  if (!gaps?.length) return null;
   const shown = gaps.slice(0, 12);
+  const open = (g: Gap) => ui.openForm(g.scope === 'outlet' ? shopDayForm(D, g.id, g.day) : houseDayForm(D, g.day));
   return <Card title="Days with gaps" aside={<span className="chip sev-amber">{gaps.length}</span>}>
-    <p className="muted" style={{ margin: '0 0 8px', fontSize: 13.5 }}>Fill a missed day from the paper book. The app works out opening stock, hens, age and lay rate for that day.</p>
-    <div className="list">{shown.map((g, i) => <div className="li" key={i}>
+    <p className="muted" style={{ margin: '0 0 8px', fontSize: 13.5 }}>Fill a missed day from the paper book, or mark an outlet closed. The app works out opening stock, hens, age and lay rate for that day.</p>
+    <div className="list">{shown.map((g) => <div className="li" key={`${g.day}-${g.scope}-${g.id}`}>
       <span className="av" style={{ background: 'var(--f-watch)' }}><Icon name="clock" /></span>
-      <div className="mid"><b>{dlabel(g.day)} · {g.where}</b><small>{g.what}</small></div>
-      <div className="end"><button className="act" onClick={g.open}>Fill in</button></div></div>)}</div>
+      <div className="mid"><b>{dlabel(g.day)} · {g.name}</b><small>Not entered: {g.missing.join(', ')}</small></div>
+      <div className="end"><button className="act" onClick={() => open(g)}>Fill in</button></div></div>)}</div>
     {gaps.length > shown.length && <p className="muted" style={{ margin: '8px 0 0', fontSize: 13 }}>{gaps.length - shown.length} more, further back.</p>}
   </Card>;
 }

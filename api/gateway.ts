@@ -10,7 +10,7 @@
 //
 // Routes (?r=...):
 //   auth/<action>   POST  sign-in, passwords, two-step   -> edge function `auth`
-//   rpc/<name>      POST  dashboard, data_version, shop_day, activity, rpc_*, security_log -> database
+//   rpc/<name>      POST  dashboard, data_version, shop_day, gaps, activity, rpc_*, security_log -> database
 //   admin           POST  owner's staff tools             -> edge function `staff-admin`
 //   push-key        GET   public key for phone notifications
 //   optout          GET   confirm page for the one-click link in digest emails (no sign-in)
@@ -31,7 +31,7 @@ const MAX_BODY = 64 * 1024;
 const AUTH_ACTIONS = new Set(['challenge', 'login', 'status', 'set_password', 'mfa_enroll', 'mfa_confirm', 'mfa_verify',
   'backup_codes', 'mfa_disable', 'logout', 'logout_all', 'bootstrap']);
 const PUBLIC_AUTH = new Set(['challenge', 'login', 'bootstrap']);
-const RPC = /^(rpc_[a-z_]{1,40}|dashboard|activity|security_log|data_version|shop_day)$/;
+const RPC = /^(rpc_[a-z_]{1,40}|dashboard|activity|security_log|data_version|shop_day|gaps)$/;
 
 interface Env { url: string; anon: string; secret: string }
 type Tokens = { access_token: string; refresh_token: string };

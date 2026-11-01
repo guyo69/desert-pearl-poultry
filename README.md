@@ -149,6 +149,16 @@ The SQL runs in one transaction and moves the id counters past the restored rows
 
 `20261101000009_retire_grade_blind.sql` removes the functions that cannot record big or damaged eggs. Apply it once the app version with egg grades is live on every phone.
 
+### Reminders, the weekly digest and its emails
+
+- **Morning reminders (06:00 Nairobi, `daily_checks()`).** For the previous day, each house is expected to have eggs and water, the farm feed, and each sales point an opening count, sales and a closing count, unless it was closed. Closed days: `locations.closed_dow` (ISO days, Sunday = 7, Sunday everywhere for now) or "Closed all day" on the daily stock sheet. "No deaths" is recorded by the house sheet; deaths are reported, never nudged on their own. Each gap goes once (`notifications.dedupe_key`) to the people responsible at that place, with one summary to the owner and farm manager. Checks start from `settings.tracking_from`.
+- **Weekly digest (Monday 06:30 Nairobi, retry 08:30; `digest_enqueue()`).** One call per recipient to the `weekly-digest` function, which builds the facts (`weekly_facts()`), phrases them (Claude, checked against the facts, else plain templates), attaches that week's entries as .xlsx (`digest_entries()`) and sends through Resend. Scope: owner everything; farm manager the farm, outlets and money; clerk the farm; a sales point its own sales and stock. `digest_log` and `nudge_log` record every send, so retries never send twice.
+- **Recipients.** Owner only: Activity → Setup → Staff → Edit → Email, and digest on/off. Every email has a one-click opt-out link (`/api/gateway?r=optout`).
+- **Preview a digest without sending** (SQL editor):
+  `select net.http_post(url := replace((select push_url from settings), '/push-notify', '/weekly-digest'), body := jsonb_build_object('mode','preview','staff','<staff id>','week','2026-10-26'), headers := jsonb_build_object('Content-Type','application/json','x-dpv-trigger',(select value from app_secrets where key='trigger_secret')));`
+  then `select content from net._http_response order by id desc limit 1;`
+- **Edge function secrets:** `RESEND_API_KEY`, `DIGEST_FROM` (a sender on a domain verified in Resend), `DIGEST_REPLY_TO` (optional), `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `DPV_APP_URL`. Without the Resend ones, sends wait as "held" and go out on the next run; without the Claude ones, the plain templates are used.
+
 ### Deploying function changes
 
 The functions import `../_shared/*.ts`. With the Supabase CLI: `supabase functions deploy <name> --no-verify-jwt`. They refuse any call that does not carry the gateway secret (`push-notify` POST: the database trigger secret), and check the session themselves.

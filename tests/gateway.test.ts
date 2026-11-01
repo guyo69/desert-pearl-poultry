@@ -100,15 +100,16 @@ describe('data calls', () => {
 
   it('forwards the change counter and the shop sheet, but not internal helpers', async () => {
     upstream = () => ok({ v: 3, day: '2026-11-01' });
-    for (const good of ['rpc/data_version', 'rpc/shop_day']) {
+    for (const good of ['rpc/data_version', 'rpc/shop_day', 'rpc/gaps', 'rpc/rpc_mark_day']) {
       const r = await handler(req(good, {}, { cookie: `__Host-dpv_at=${jwt(3600)}` }));
       expect(r.status, good).toBe(200);
     }
-    for (const bad of ['rpc/_stock4', 'rpc/_rebase', 'rpc/farm_daily2']) {
+    for (const bad of ['rpc/_stock4', 'rpc/_rebase', 'rpc/farm_daily2', 'rpc/completeness', 'rpc/weekly_facts', 'rpc/digest_entries',
+                       'rpc/mail_claim', 'rpc/mail_finish', 'rpc/digest_enqueue', 'rpc/mail_recipients', 'rpc/daily_checks']) {
       const r = await handler(req(bad, {}, { cookie: `__Host-dpv_at=${jwt(3600)}` }));
       expect(r.status, bad).toBe(404);
     }
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(4);
   });
 
   it('calls PostgREST with the cookie token', async () => {
