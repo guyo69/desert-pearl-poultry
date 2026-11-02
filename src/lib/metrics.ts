@@ -3,10 +3,11 @@
 import { addDays, daysBetween, dlabel, dshort, eggs, kes, n0, pct, range } from './format';
 import type { Dashboard, Item, Q, Role, Sev, StockKind } from './types';
 
-export const ITEMS: Item[] = ['N', 'B', 'J', 'C'];
+/** Grades staff record. Big eggs count as Normal (Big is kept only for older records). */
+export const ITEMS: Item[] = ['N', 'J', 'C'];
 export const ITEM_NAME: Record<Item, string> = { N: 'Normal eggs', B: 'Big eggs', J: 'Jumbo / double yolk', C: 'Cracked (sellable)' };
 /** Grade keys in the order the paper books use. */
-export const GRADES = [['n', 'Normal'], ['b', 'Big'], ['j', 'Jumbo / double yolk'], ['c', 'Cracked (sellable)']] as const;
+export const GRADES = [['n', 'Normal'], ['j', 'Jumbo / double yolk'], ['c', 'Cracked (sellable)']] as const;
 export const Z = (): Q => ({ n: 0, b: 0, c: 0, j: 0 });
 export const tot = (q: Q) => q.n + (q.b ?? 0) + q.c + q.j;
 export const add = (a: Q, b: Q, k = 1): Q => ({ n: a.n + k * b.n, b: (a.b ?? 0) + k * (b.b ?? 0), c: a.c + k * b.c, j: a.j + k * b.j });
@@ -33,6 +34,8 @@ export const accName = (D: Dashboard, id: string) => D.accounts.find((a) => a.id
 export const cashAcc = (loc: string) => `CASH:${loc}`;
 export const LOC_COLORS: Record<string, string> = { FARM: '--l-farm', VAN: '--l-van', TUALA: '--l-tuala', RAYAN: '--l-rayan', LUCKY: '--l-lucky' };
 export const locColor = (id: string) => LOC_COLORS[id] ?? '--muted';
+/** The owner views and sets up; staff enter the day's records. The database enforces the same rule. */
+export const canEnter = (D: Dashboard) => D.me.role !== 'owner';
 /** ISO weekday of a YYYY-MM-DD date: 1 = Monday … 7 = Sunday. */
 export const isoDow = (d: string) => new Date(`${d}T00:00:00Z`).getUTCDay() || 7;
 /** A sales point's regular closing day (Sunday unless changed in the database). */

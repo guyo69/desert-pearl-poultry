@@ -9,7 +9,13 @@ export function range(a: string, b: string): string[] { const out: string[] = []
 export const dlabel = (s: string) => { const t = toDate(s); return `${W[t.getUTCDay()]} ${t.getUTCDate()} ${MO[t.getUTCMonth()]}`; };
 export const dshort = (s: string) => { const t = toDate(s); return `${t.getUTCDate()} ${MO[t.getUTCMonth()]}`; };
 export const dnum = (s: string) => s.split('-').reverse().join('/');
-export const timeOf = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Nairobi' });
+/** Nairobi clock time (UTC+3, no daylight saving), worked out by hand so older phones without time-zone data still show it. */
+export const timeOf = (iso: string | null | undefined) => {
+  const t = iso ? new Date(iso).getTime() : NaN;
+  if (!Number.isFinite(t)) return '';
+  const d = new Date(t + 3 * 3600_000);
+  return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+};
 
 export const n0 = (v: number) => (Number.isFinite(v) ? (Math.round(v) || 0).toLocaleString('en-KE') : '–');
 export const kes = (v: number) => (!Number.isFinite(v) ? '–' : (Math.round(v) < 0 ? '−' : '') + 'KES ' + Math.abs(Math.round(v)).toLocaleString('en-KE'));

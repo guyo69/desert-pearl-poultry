@@ -1,7 +1,7 @@
 // Owner and Farm Manager screens: overview, alerts, stock, money, report.
 import { addDays, dlabel, dnum, dshort, eggs, kes, kesS, n0, pct, range } from '../lib/format';
 import {
-  alertsFor, closedToday, mix, produced, balance, collected, dayLedger, feedInfo, hensNow, intelligence, layRate, outletLoss, salesOn, stockNow, tankInfo, tot,
+  alertsFor, canEnter, closedToday, mix, produced, balance, collected, dayLedger, feedInfo, hensNow, intelligence, layRate, outletLoss, salesOn, stockNow, tankInfo, tot,
   totalFunds, waterOn, waterTrend,
 } from '../lib/metrics';
 import type { Dashboard } from '../lib/types';
@@ -35,8 +35,8 @@ export function Overview({ D, go, version }: ViewProps) {
         sub={D.me.role === 'owner' ? 'Cash + M-Pesa + bank' : <><Delta a={wY} b={wPrev} /> vs 7-day average</>} />
     </div>
     <div className="grid2">
-      <FeedCard D={D} actions={<button className="btn sm alt" onClick={() => ui.openForm(feedInForm(D))}><Icon name="sack" />Feed received</button>} />
-      <TankCard D={D} actions={<button className="btn sm alt" onClick={() => ui.openForm(tankForm(D))}><Icon name="tank" />Tank level</button>} />
+      <FeedCard D={D} actions={canEnter(D) ? <button className="btn sm alt" onClick={() => ui.openForm(feedInForm(D))}><Icon name="sack" />Feed received</button> : undefined} />
+      <TankCard D={D} actions={canEnter(D) ? <button className="btn sm alt" onClick={() => ui.openForm(tankForm(D))}><Icon name="tank" />Tank level</button> : undefined} />
     </div>
     <Card title="Needs attention" aside={<button className="lnk" onClick={() => go('alerts')}>See all {A.length + nGaps}</button>}>
       {gaps?.length ? <div className="alerts" style={{ marginBottom: A.length ? 8 : 0 }}>
@@ -78,7 +78,7 @@ export function Alerts({ D, version }: ViewProps) {
       <Card title="Deliveries not yet confirmed">{D.transit.length ? <div className="list">{D.transit.map((x) => (
         <div className="li" key={x.id}><span className="av" style={{ background: 'var(--l-tuala)' }}><Icon name="truck" /></span>
           <div className="mid"><b>{D.locations.find((l) => l.id === x.from_loc)?.short} → {D.locations.find((l) => l.id === x.to_loc)?.short}</b><small>Sent {dlabel(x.d)}</small></div>
-          <div className="end">{eggs(x.sent_n + (x.sent_b ?? 0) + x.sent_c + x.sent_j)}<div><button className="act" onClick={() => ui.openForm(receiveForm(D, x))}>Receive</button></div></div></div>))}</div>
+          <div className="end">{eggs(x.sent_n + (x.sent_b ?? 0) + x.sent_c + x.sent_j)}{canEnter(D) && <div><button className="act" onClick={() => ui.openForm(receiveForm(D, x))}>Receive</button></div>}</div></div>))}</div>
         : <Empty>All deliveries confirmed.</Empty>}</Card>
     </div>
     <Card title="Notifications" aside={<span className="muted">last 14 days</span>}><NoticeList D={D} /></Card>
@@ -94,17 +94,17 @@ export function Stock({ D }: ViewProps) {
   return <>
     <div className="sample"><div><h2>Stock across locations</h2><div className="muted">Normal eggs in trays of 30 and pieces</div></div></div>
     <Card title="On hand now"><div className="tblw"><table>
-      <thead><tr><th>Location</th><th>Normal</th><th>Big</th><th>Jumbo</th><th>Cracked</th><th>On the way</th></tr></thead>
-      <tbody>{rows.map((r) => <tr key={r.l.id}><td><LocDot id={r.l.id} />{r.l.name}</td><td>{eggs(r.s.n)}</td><td>{r.s.b ? eggs(r.s.b) : '–'}</td><td>{r.s.j ? `${r.s.j} pc` : '–'}</td><td>{r.s.c ? eggs(r.s.c) : '–'}</td><td>{r.it ? eggs(r.it) : '–'}</td></tr>)}</tbody>
-      <tfoot><tr><td>All locations</td><td>{eggs(T.n)}</td><td>{eggs(T.b)}</td><td>{T.j} pc</td><td>{eggs(T.c)}</td><td>{T.it ? eggs(T.it) : '–'}</td></tr></tfoot></table></div></Card>
+      <thead><tr><th>Location</th><th>Normal</th><th>Jumbo</th><th>Cracked</th><th>On the way</th></tr></thead>
+      <tbody>{rows.map((r) => <tr key={r.l.id}><td><LocDot id={r.l.id} />{r.l.name}</td><td>{eggs(r.s.n + r.s.b)}</td><td>{r.s.j ? `${r.s.j} pc` : '–'}</td><td>{r.s.c ? eggs(r.s.c) : '–'}</td><td>{r.it ? eggs(r.it) : '–'}</td></tr>)}</tbody>
+      <tfoot><tr><td>All locations</td><td>{eggs(T.n + T.b)}</td><td>{T.j} pc</td><td>{eggs(T.c)}</td><td>{T.it ? eggs(T.it) : '–'}</td></tr></tfoot></table></div></Card>
     <Card title="Today's stock movement" aside={<span className="muted">pieces</span>}><div className="tblw"><table>
-      <thead><tr><th>Location</th><th>Opening</th><th>+ Collected</th><th>+ Received</th><th>− Sent</th><th>− Issued</th><th>− Sold</th><th>− Damaged</th><th>± Count</th><th>On hand</th></tr></thead>
+      <thead><tr><th>Location</th><th>Opening</th><th>+ Collected</th><th>+ Received</th><th>− Issued (sent)</th><th>− Out, no sale</th><th>− Sold</th><th>− Damaged</th><th>± Count</th><th>On hand</th></tr></thead>
       <tbody>{D.locations.map((l) => { const L = dayLedger(D, l.id, D.today); return <tr key={l.id}><td><LocDot id={l.id} />{l.short}</td><td>{n0(tot(L.open))}</td><td>{v(tot(L.coll))}</td><td>{v(tot(L.recv))}</td><td>{v(tot(L.out))}</td><td>{v(tot(L.iss))}</td><td>{v(tot(L.sold))}</td><td>{v(tot(L.brk))}</td><td>{v(tot(L.adj))}</td><td><b>{n0(tot(L.close))}</b></td></tr>; })}</tbody></table></div>
-      <p className="muted" style={{ margin: '10px 0 0', fontSize: 13 }}>Each row balances: opening + collected + received − sent − issued − sold − damaged ± count = on hand. Damaged at collection never enters stock.</p></Card>
+      <p className="muted" style={{ margin: '10px 0 0', fontSize: 13 }}>Each row balances: opening + collected + received − issued (sent) − out, no sale − sold − damaged ± count = on hand. Damaged at collection never enters stock.</p></Card>
     <div className="grid2">
       <Card title="On the way">{D.transit.length ? <div className="list">{D.transit.map((x) => <div className="li" key={x.id}><span className="av" style={{ background: 'var(--l-tuala)' }}><Icon name="truck" /></span>
         <div className="mid"><b>{D.locations.find((l) => l.id === x.from_loc)?.short} → {D.locations.find((l) => l.id === x.to_loc)?.short}</b><small>Sent {dlabel(x.d)}</small></div>
-        <div className="end">{eggs(x.sent_n + (x.sent_b ?? 0) + x.sent_c + x.sent_j)}<div><button className="act" onClick={() => ui.openForm(receiveForm(D, x))}>Receive</button></div></div></div>)}</div> : <Empty>Nothing in transit.</Empty>}</Card>
+        <div className="end">{eggs(x.sent_n + (x.sent_b ?? 0) + x.sent_c + x.sent_j)}{canEnter(D) && <div><button className="act" onClick={() => ui.openForm(receiveForm(D, x))}>Receive</button></div>}</div></div>)}</div> : <Empty>Nothing in transit.</Empty>}</Card>
       <Card title="Damaged eggs, last 7 days" aside={<span className="muted">collection, transit, shops</span>}>
         <BarList format={(v) => pct(v)} rows={loss.map((o) => ({ key: o.loc, label: <><LocDot id={o.loc} />{D.locations.find((l) => l.id === o.loc)?.short}</>, value: o.rate,
           color: o.rate * 100 > D.settings.break_tol ? '--f-low' : '--f-full', note: `${o.loss} pc lost of ${eggs(o.base)}` }))} /></Card>
@@ -124,8 +124,8 @@ export function Money({ D }: ViewProps) {
     <div className="acc"><div className="h"><i style={{ background: `var(${col})` }} />{name}</div><div className="v">{kes(v)}</div>{sub && <div className="s">{sub}</div>}</div>;
   return <>
     <div className="sample"><div><h2>Money position</h2><div className="muted">Every shilling sits in one of four places</div></div>
-      <div className="row-btns"><button className="btn sm" onClick={() => ui.openForm(moveForm(D, null))}><Icon name="swap" />Move money</button>
-        <button className="btn sm alt" onClick={() => ui.openForm(expenseForm(D, 'FARM', true))}><Icon name="wallet" />Expense</button></div></div>
+      {canEnter(D) && <div className="row-btns"><button className="btn sm" onClick={() => ui.openForm(moveForm(D, null))}><Icon name="swap" />Move money</button>
+        <button className="btn sm alt" onClick={() => ui.openForm(expenseForm(D, 'FARM', true))}><Icon name="wallet" />Expense</button></div>}</div>
     <div className="accs">
       <Acc name="Cash at hand" col="--l-farm" v={cash.reduce((a, c) => a + balance(D, c.id), 0)} sub={cash.map((c) => `${D.locations.find((l) => l.id === c.location_id)?.short} ${kesS(balance(D, c.id))}`).join(' · ')} />
       <Acc name="M-Pesa Till" col="--l-tuala" v={balance(D, 'TILL')} sub="Buy Goods, all outlets" />

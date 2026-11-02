@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { rpc } from '../lib/api';
 import { addDays, daysBetween, dlabel, eggs, n0, pct, range } from '../lib/format';
-import { collected, damagedAtFarm, deaths, hensNow, houseAge, layRate, mix, produced, stockNow, tankInfo, waterFeedRatio, waterOn, waterTrend } from '../lib/metrics';
+import { canEnter, collected, damagedAtFarm, deaths, hensNow, houseAge, layRate, mix, produced, stockNow, tankInfo, waterFeedRatio, waterOn, waterTrend } from '../lib/metrics';
 import {
   collectForm, dispatchForm, feedInForm, feedUseForm, houseDayForm, medForm, medicineForm, mortForm, scheduleForm, tankForm, waterIntakeForm,
 } from '../forms/forms';
@@ -29,7 +29,7 @@ export function ClerkHome({ D, version, go }: ViewProps) {
       <Tile icon="tank" label="Tank level" color="--l-tuala" onClick={() => ui.openForm(tankForm(D))} />
       <Tile icon="syringe" label="Medicine & vaccines" color="--l-rayan" onClick={() => ui.openForm(medForm(D))} />
       <Tile icon="bird" label="Mortality" color="--muted" onClick={() => ui.openForm(mortForm(D))} />
-      <Tile icon="truck" label="Send eggs" color="--l-farm" onClick={() => ui.openForm(dispatchForm(D, 'FARM'))} />
+      <Tile icon="truck" label="Issue eggs" color="--l-farm" onClick={() => ui.openForm(dispatchForm(D, 'FARM'))} />
       <Tile icon="sack" label="Feed received" color="--l-lucky" onClick={() => ui.openForm(feedInForm(D))} />
     </div>
     <div className="grid2">
@@ -43,7 +43,6 @@ export function ClerkHome({ D, version, go }: ViewProps) {
     <Card title="Farm egg store" aside={<span className="muted">available to send</span>}>
       <div className="kpis">
         <div className="kpi"><div className="lbl">Normal</div><div className="val">{eggs(farm.n)}</div></div>
-        <div className="kpi"><div className="lbl">Big</div><div className="val">{eggs(farm.b)}</div></div>
         <div className="kpi"><div className="lbl">Jumbo</div><div className="val">{farm.j} pc</div></div>
         <div className="kpi"><div className="lbl">Cracked</div><div className="val">{eggs(farm.c)}</div></div>
       </div></Card>
@@ -55,11 +54,11 @@ export function ClerkHome({ D, version, go }: ViewProps) {
 export function Feed({ D, version }: ViewProps) {
   const ui = useUI();
   return <>
-    <FeedCard D={D} actions={<><button className="btn sm" onClick={() => ui.openForm(feedUseForm(D))}><Icon name="scoop" />Feed used</button>
-      <button className="btn sm alt" onClick={() => ui.openForm(feedInForm(D))}><Icon name="sack" />Feed received</button></>} />
+    <FeedCard D={D} actions={canEnter(D) ? <><button className="btn sm" onClick={() => ui.openForm(feedUseForm(D))}><Icon name="scoop" />Feed used</button>
+      <button className="btn sm alt" onClick={() => ui.openForm(feedInForm(D))}><Icon name="sack" />Feed received</button></> : undefined} />
     <Card title="Feed in store" aside={<span className="muted">shaded by buffer band</span>}><FeedStockChart D={D} /></Card>
     <Card title="Daily use vs plan"><FeedUseChart D={D} /></Card>
-    <Card title="Feed records"><RecordList D={D} version={version} kinds={['feed']} canVoid={D.me.role === 'owner' || D.me.role === 'manager'} limit={20} /></Card>
+    <Card title="Feed records"><RecordList D={D} version={version} kinds={['feed']} canVoid={false} limit={20} /></Card>
   </>;
 }
 
@@ -68,8 +67,8 @@ export function Water({ D, version }: ViewProps) {
   const ratio = waterFeedRatio(D, range(addDays(D.today, -7), y));
   const t = tankInfo(D);
   return <>
-    <div className="row-btns"><button className="btn" onClick={() => ui.openForm(waterIntakeForm(D))}><Icon name="drop" />Water drunk</button>
-      <button className="btn alt" onClick={() => ui.openForm(tankForm(D))}><Icon name="tank" />Tank level</button></div>
+    {canEnter(D) && <div className="row-btns"><button className="btn" onClick={() => ui.openForm(waterIntakeForm(D))}><Icon name="drop" />Water drunk</button>
+      <button className="btn alt" onClick={() => ui.openForm(tankForm(D))}><Icon name="tank" />Tank level</button></div>}
     <div className="grid2">
       <TankCard D={D} />
       <Card title="Drinking by house" aside={<span className="muted">yesterday vs 7-day average</span>}><div className="list">{D.houses.map((h, i) => {
@@ -84,7 +83,7 @@ export function Water({ D, version }: ViewProps) {
       <WaterChart D={D} />
       <p className="muted" style={{ fontSize: 13, margin: '10px 0 0' }}>Laying hens normally drink about {s.water_ratio_min}–{s.water_ratio_max} litres for every kg of feed, more in hot weather. A drop of {s.water_drop_pct}% or more below the usual level raises an alert: it often shows a blocked line or sick birds a day before egg numbers fall.</p></Card>
     {t && D.tank_daily.length > 1 && <Card title="Tank level"><TankChart D={D} /></Card>}
-    <Card title="Water records"><RecordList D={D} version={version} kinds={['water']} canVoid={D.me.role === 'owner' || D.me.role === 'manager'} limit={20} /></Card>
+    <Card title="Water records"><RecordList D={D} version={version} kinds={['water']} canVoid={false} limit={20} /></Card>
   </>;
 }
 
@@ -93,7 +92,7 @@ export function Health({ D }: ViewProps) {
   const W = range(addDays(D.today, -7), addDays(D.today, -1)), M = range(addDays(D.today, -30), D.today);
   const done = async (id: number, v: boolean) => { try { await rpc('rpc_schedule_done', { p_id: id, p_done: v }); ui.toast(v ? 'Marked done.' : 'Marked not done.'); } catch (e) { ui.toast((e as Error).message); } };
   return <>
-    <Card title="Flocks" aside={<button className="lnk" onClick={() => ui.openForm(mortForm(D))}>Record mortality</button>}><div className="tblw"><table>
+    <Card title="Flocks" aside={canEnter(D) ? <button className="lnk" onClick={() => ui.openForm(mortForm(D))}>Record mortality</button> : undefined}><div className="tblw"><table>
       <thead><tr><th>House</th><th>Hens</th><th>Age</th><th>Lay 7d</th><th>Expected</th><th>Water/bird</th><th>Deaths 30d</th></tr></thead>
       <tbody>{D.houses.map((h) => { const lay = layRate(D, W, h.id), hens = hensNow(D, h.id), wpb = hens ? (waterOn(D, W, h.id) / 7 / hens) * 1000 : NaN;
         return <tr key={h.id}><td>{h.name}</td><td>{n0(hens)}</td><td>{houseAge(D, h)} wks</td>
@@ -102,7 +101,7 @@ export function Health({ D }: ViewProps) {
     <MedicineStore D={D} mgmt={mgmt} />
     <Card title="Vaccination & treatment schedule" aside={mgmt ? <button className="lnk" onClick={() => ui.openForm(scheduleForm(D))}>Add task</button> : undefined}>
       {D.schedule.length ? <div>{D.schedule.map((e) => { const n = daysBetween(D.today, e.due);
-        return <div className="check" key={e.id}><button className={`tick ${e.done ? 'ok' : ''}`} style={{ border: 0, cursor: 'pointer' }} aria-label={e.done ? 'Mark not done' : 'Mark done'} onClick={() => done(e.id, !e.done)}>{e.done && <Icon name="check" />}</button>
+        return <div className="check" key={e.id}><button className={`tick ${e.done ? 'ok' : ''}`} style={{ border: 0, cursor: 'pointer' }} aria-label={e.done ? 'Mark not done' : 'Mark done'} disabled={!canEnter(D)} onClick={() => canEnter(D) && done(e.id, !e.done)}>{e.done && <Icon name="check" />}</button>
           <div style={{ flex: 1, minWidth: 0 }}><b style={{ display: 'block', fontSize: 14.5 }}>{e.task}</b><small className="muted">{e.house} · {dlabel(e.due)}{!e.done && (n < 0 ? ` · ${-n} days overdue` : n === 0 ? ' · today' : ` · in ${n} days`)}</small></div>
           {mgmt && <button className="act" style={{ background: 'none', border: 0, color: 'var(--muted)' }} onClick={() => ui.openForm(scheduleForm(D, e))}>Edit</button>}</div>; })}</div>
         : <Empty>No vaccinations or treatments scheduled.</Empty>}</Card>
@@ -114,7 +113,7 @@ export function Records({ D, version }: ViewProps) {
   const [k, setK] = useState('all');
   return <Card title="Farm records" aside={<Seg value={k} options={REC_KINDS} onChange={setK} />}>
     <RecordList D={D} version={version} loc={k === 'all' || k === 'xfer' ? 'FARM' : null} kinds={k === 'all' ? ['collect', 'feed', 'water', 'med', 'mort', 'xfer'] : [k]}
-      canVoid={D.me.role === 'owner' || D.me.role === 'manager'} limit={k === 'all' ? 60 : 30} /></Card>;
+      canVoid={false} limit={k === 'all' ? 60 : 30} /></Card>;
 }
 
 function MedicineStore({ D, mgmt }: { D: ViewProps['D']; mgmt: boolean }) {
@@ -124,8 +123,8 @@ function MedicineStore({ D, mgmt }: { D: ViewProps['D']; mgmt: boolean }) {
   const retired = D.medicines.filter((m) => !m.active).length;
   const groups = [...new Set(list.map((m) => m.category))].sort((a, b) => a.localeCompare(b));
   return <Card title="Medicine & vaccine store" aside={<div className="row-btns">
-      <button className="lnk" onClick={() => ui.openForm(medForm(D))}>Record use or delivery</button>
-      <button className="lnk" onClick={() => ui.openForm(medForm(D, { startNew: true }))}>New item received</button>
+      {canEnter(D) && <button className="lnk" onClick={() => ui.openForm(medForm(D))}>Record use or delivery</button>}
+      {canEnter(D) && <button className="lnk" onClick={() => ui.openForm(medForm(D, { startNew: true }))}>New item received</button>}
       {mgmt && <button className="lnk" onClick={() => ui.openForm(medicineForm(D))}>Add item</button>}</div>}>
     {list.length ? groups.map((g) => <div key={g} className="medgroup">
       <h4>{g}</h4>

@@ -2,7 +2,7 @@
 // function behind it re-checks everything, so these checks are for speed only.
 import { rpc, staffAdmin } from '../lib/api';
 import { addDays, dlabel, eggs, kes, n0, pct } from '../lib/format';
-import { ITEMS, ITEM_NAME, Z, accName, balance, band, cashAcc, collected, damagedAtFarm, dayLedger, feedInfo, hensNow, houseAge, locName, mix, priceOf, salesOn, stockNow, tankInfo, tot, waterOn } from '../lib/metrics';
+import { ITEMS, ITEM_NAME, accName, balance, band, cashAcc, collected, damagedAtFarm, dayLedger, feedInfo, hensNow, houseAge, locName, mix, priceOf, salesOn, stockNow, tankInfo, tot, waterOn } from '../lib/metrics';
 import type { Dashboard, House, Item, Medicine, Q, ScheduleItem, StaffLite, Transfer } from '../lib/types';
 import type { Field, FormSpec, V } from '../ui/ui';
 
@@ -25,7 +25,7 @@ function gradeFields(p: string, o: { def?: Partial<Q>; dmg?: string; only?: Item
   const want = (i: Item) => !o.only || o.only.includes(i);
   const f: Field[] = [];
   if (want('N')) f.push({ type: 'eggs', id: `${p}n`, label: 'Normal eggs', def: o.def?.n, hint: o.hint?.N });
-  if (want('B')) f.push({ type: 'eggs', id: `${p}b`, label: 'Big eggs', def: o.def?.b, hint: o.hint?.B });
+  // Big eggs are recorded as Normal (no separate grade since 2 Nov 2026)
   if (want('C')) f.push({ type: 'eggs', id: `${p}c`, label: 'Cracked (sellable)', def: o.def?.c, hint: o.hint?.C });
   const small: Field[] = [];
   if (want('J')) small.push({ type: 'num', id: `${p}j`, label: 'Jumbo / double yolk', suffix: 'pc', def: o.def?.j ?? '' });
@@ -260,29 +260,35 @@ export const mortForm = (D: Dashboard): FormSpec => ({
 });
 
 /* ---------------- stock movement ---------------- */
+/** Issue eggs: send stock from one location to another. One destination per entry, chosen from a list. */
 export function dispatchForm(D: Dashboard, from: string): FormSpec {
   const st = stockNow(D, from);
   const dests = D.locations.filter((l) => l.id !== from);
-  const lines = (v: V) => dests.map((l) => ({ to: l.id, name: l.name, ...gradesOf(v, `${l.id}_`) })).filter((x) => tot(x) > 0);
-  const fields: Field[] = [{ type: 'note', text: <div><span>In stock at {locName(D, from)}</span><b>{mix(st)}</b></div> }];
-  for (const l of dests) fields.push({ type: 'note', text: <div className="dest"><b>To {l.name}</b></div> }, ...gradeFields(`${l.id}_`));
+  const name = (id: unknown) => dests.find((l) => l.id === id)?.name ?? '';
   return {
-    title: 'Send eggs',
-    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Fill in only the outlets you are sending to. Everything is sent together, and each outlet confirms its count on arrival.</p>,
-    fields, submit: 'Send',
+    title: 'Issue eggs',
+    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Send eggs from {locName(D, from)} to another location. That location confirms the count when they arrive.</p>,
+    fields: [
+      { type: 'note', text: <div><span>In stock at {locName(D, from)}</span><b>{mix(st)}</b></div> },
+      { type: 'select', id: 'to', label: 'Send to', options: [['', 'Choose a location'], ...dests.map((l): [string, string] => [l.id, l.name])] },
+      ...gradeFields(''),
+      { type: 'text', id: 'note', label: 'Note (optional)', placeholder: 'e.g. vehicle or who is carrying them' },
+    ],
+    submit: 'Issue eggs',
     calc: (v) => {
-      const L = lines(v), all = L.reduce((a, x) => ({ n: a.n + x.n, b: a.b + x.b, c: a.c + x.c, j: a.j + x.j }), Z());
-      if (!L.length) return <div><span className="muted">Enter the eggs for at least one outlet</span></div>;
-      const o = over(all, st);
-      return <>{L.map((x) => <Row key={x.to} l={x.name} r={mix(x)} />)}
-        {o ? <Bad l={o} r="Check" /> : <Row l="Left after" r={mix({ n: st.n - all.n, b: st.b - all.b, c: st.c - all.c, j: st.j - all.j })} />}</>;
+      const q = gradesOf(v);
+      if (!v.to) return <div><span className="muted">Choose where the eggs are going</span></div>;
+      if (!tot(q)) return <div><span className="muted">Enter the eggs you are sending to {name(v.to)}</span></div>;
+      const o = over(q, st);
+      return <><Row l={`To ${name(v.to)}`} r={mix(q)} />
+        {o ? <Bad l={o} r="Check" /> : <Row l="Left after" r={mix({ n: st.n - q.n, b: st.b - q.b, c: st.c - q.c, j: st.j - q.j })} />}</>;
     },
     onSubmit: async (v) => {
-      const L = lines(v);
-      if (!L.length) throw new Error('Enter the eggs for at least one outlet.');
-      await rpc('rpc_dispatch_many', { p_from: from, p_items: L.map(({ to, n, b, c, j }) => ({ to, n, b, c, j })) });
-      return L.length === 1 ? `${eggs(tot(L[0]))} on the way to ${L[0].name}. They confirm the count on arrival.`
-        : `Sent to ${L.length} outlets: ${L.map((x) => x.name).join(', ')}. Each confirms its count on arrival.`;
+      const q = gradesOf(v);
+      if (!v.to) throw new Error('Choose where the eggs are going.');
+      if (!tot(q)) throw new Error('Enter the eggs you are sending.');
+      await rpc('rpc_dispatch_many', { p_from: from, p_items: [{ to: v.to, n: q.n, b: q.b, c: q.c, j: q.j }], p_note: String(v.note ?? '').trim() || null });
+      return `${eggs(tot(q))} issued to ${name(v.to)}. They confirm the count on arrival.`;
     },
   };
 }
@@ -318,25 +324,24 @@ export function receiveForm(D: Dashboard, x: Transfer): FormSpec {
 export function issueForm(D: Dashboard, loc: string): FormSpec {
   const st = stockNow(D, loc);
   return {
-    title: 'Issue eggs out',
-    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>For eggs that leave without a sale today: customers on credit, bulk orders collected, eggs returned to a supplier. Sending to another outlet is under <b>Send eggs</b> instead.</p>,
+    title: 'Eggs out, no sale',
+    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>For eggs that leave without a sale: owner or staff use, eggs returned to a supplier. Sending to another location is <b>Issue eggs</b>; a customer paying later is a sale paid on <b>Credit</b>.</p>,
     fields: [
       ...dateFields(D),
       { type: 'note', text: <div><span>In stock</span><b>{mix(st)}</b></div> },
       ...gradeFields(''),
-      { type: 'text', id: 'party', label: 'Issued to', placeholder: 'Name of the customer or place' },
-      { type: 'select', id: 'why', label: 'Reason', options: [['Customer on credit', 'Customer on credit'], ['Bulk order collected', 'Bulk order collected'], ['Owner / staff use', 'Owner / staff use'], ['Other', 'Other']] },
+      { type: 'text', id: 'party', label: 'Given to', placeholder: 'Name of the person or place' },
+      { type: 'select', id: 'why', label: 'Reason', options: [['Owner / staff use', 'Owner / staff use'], ['Returned to supplier', 'Returned to supplier'], ['Other', 'Other']] },
       { type: 'text', id: 'note', label: 'Note (optional)', placeholder: 'e.g. pays on Friday' },
     ],
-    calc: (v) => { const q = gradesOf(v), o = over(q, st); return <>{o ? <Bad l={o} r="Check" /> : <Row l="Issuing" r={mix(q)} />}
-      {v.why === 'Customer on credit' && tot(q) > 0 && <Row l="Value at list price" r={kes(priceOf(D, q))} />}</>; },
+    calc: (v) => { const q = gradesOf(v), o = over(q, st); return <>{o ? <Bad l={o} r="Check" /> : <Row l="Going out" r={mix(q)} />}</>; },
     onSubmit: async (v) => {
       const q = gradesOf(v);
-      if (!tot(q)) throw new Error('Enter the eggs issued.');
+      if (!tot(q)) throw new Error('Enter the eggs going out.');
       if (!String(v.party ?? '').trim()) throw new Error('Say who received the eggs.');
       await rpc('rpc_issue_out', { p_loc: loc, p_n: q.n, p_b: q.b, p_j: q.j, p_c: q.c, p_party: String(v.party).trim(),
         p_note: [v.why, v.note].filter(Boolean).join(': '), p_date: dateArg(D, v) });
-      return `${eggs(tot(q))} issued to ${String(v.party).trim()}${onDay(D, v)}.`;
+      return `${eggs(tot(q))} recorded as out to ${String(v.party).trim()}${onDay(D, v)}.`;
     },
   };
 }
@@ -370,24 +375,27 @@ export function saleForm(D: Dashboard, loc: string): FormSpec {
                                    C: `On the shelf: ${eggs(st.c)} · ${n0(s.tray_c)} a tray, ${s.pc_c} a piece` } }),
       { type: 'num', id: 'agreed', label: 'Agreed price (only if different)', suffix: 'KES', hint: 'Leave blank to charge the list price.' },
       { type: 'pair', fields: [{ type: 'num', id: 'cash', label: 'Cash', suffix: 'KES' }, { type: 'num', id: 'till', label: 'M-Pesa Till', suffix: 'KES' }] },
-      { type: 'num', id: 'paybill', label: 'M-Pesa Paybill', suffix: 'KES' },
-      { type: 'text', id: 'customer', label: 'Customer (optional)', placeholder: 'e.g. hotel or regular buyer' },
+      { type: 'pair', fields: [{ type: 'num', id: 'paybill', label: 'M-Pesa Paybill', suffix: 'KES' }, { type: 'num', id: 'credit', label: 'Credit (pays later)', suffix: 'KES' }] },
+      { type: 'text', id: 'customer', label: 'Customer (needed for credit)', placeholder: 'e.g. hotel or regular buyer' },
     ],
-    calc: (v) => { const d = due(v), paid = v.cash + v.till + v.paybill, rem = d - paid, o = over(gradesOf(v), st); return <>
+    calc: (v) => { const d = due(v), paid = v.cash + v.till + v.paybill + (v.credit || 0), rem = d - paid, o = over(gradesOf(v), st); return <>
       {o && <Bad l={o} r="Check" />}
       <div><span>Amount due</span><b className="big">{kes(d)}</b></div>
       {v.agreed > 0 && v.agreed !== list(v) && <Row l="List price" r={`${kes(list(v))} (${v.agreed < list(v) ? 'discount' : 'premium'} ${kes(Math.abs(list(v) - v.agreed))})`} />}
       {d === 0 && paid === 0 ? <div><span className="muted">Enter the eggs sold, then how the customer paid</span></div>
-        : d > 0 && rem === 0 ? <Ok>Payments add up to {kes(paid)}</Ok> : <Bad l={rem > 0 ? 'Still to allocate' : 'Over-allocated'} r={kes(Math.abs(rem))} />}</>; },
-    buttons: (v, set) => <>{(['cash', 'till', 'paybill'] as const).map((m) => (
-      <button key={m} type="button" className="btn sm alt" onClick={() => set({ cash: '', till: '', paybill: '', [m]: due(v) })}>All {m === 'cash' ? 'cash' : m === 'till' ? 'Till' : 'Paybill'}</button>))}</>,
+        : d > 0 && rem === 0 ? <Ok>Payments add up to {kes(paid)}{v.credit > 0 ? `, ${kes(v.credit)} on credit` : ''}</Ok> : <Bad l={rem > 0 ? 'Still to allocate' : 'Over-allocated'} r={kes(Math.abs(rem))} />}
+      {v.credit > 0 && !String(v.customer ?? '').trim() && <Bad l="Credit needs the customer's name" r="Add it below" />}</>; },
+    buttons: (v, set) => <>{(['cash', 'till', 'paybill', 'credit'] as const).map((m) => (
+      <button key={m} type="button" className="btn sm alt" onClick={() => set({ cash: '', till: '', paybill: '', credit: '', [m]: due(v) })}>All {m === 'cash' ? 'cash' : m === 'till' ? 'Till' : m === 'paybill' ? 'Paybill' : 'credit'}</button>))}</>,
     onSubmit: async (v) => {
       const d = due(v), q = gradesOf(v);
       if (!tot(q)) throw new Error('Enter the eggs sold.');
-      if (v.cash + v.till + v.paybill !== d) throw new Error(`Payments (${kes(v.cash + v.till + v.paybill)}) must equal the amount due (${kes(d)}).`);
-      await rpc('rpc_record_sale', { p_loc: loc, p_n: q.n, p_b: q.b, p_j: q.j, p_c: q.c, p_cash: v.cash, p_till: v.till, p_paybill: v.paybill,
-        p_customer: v.customer || null, p_value: v.agreed > 0 ? v.agreed : null, p_date: dateArg(D, v) });
-      return `Sale of ${kes(d)} saved${onDay(D, v)}.`;
+      const credit = v.credit || 0, paid = v.cash + v.till + v.paybill + credit;
+      if (paid !== d) throw new Error(`Payments (${kes(paid)}) must equal the amount due (${kes(d)}).`);
+      if (credit > 0 && !String(v.customer ?? '').trim()) throw new Error('Enter the name of the customer who will pay later.');
+      await rpc('rpc_sale_with_credit', { p_loc: loc, p_n: q.n, p_j: q.j, p_c: q.c, p_cash: v.cash, p_till: v.till, p_paybill: v.paybill, p_credit: credit,
+        p_customer: String(v.customer ?? '').trim() || null, p_value: v.agreed > 0 ? v.agreed : null, p_date: dateArg(D, v) });
+      return `Sale of ${kes(d)} saved${credit > 0 ? `, ${kes(credit)} on credit to ${String(v.customer).trim()}` : ''}${onDay(D, v)}.`;
     },
   };
 }
@@ -421,7 +429,7 @@ export function shopDayForm(D: Dashboard, loc: string, day?: string): FormSpec {
       { type: 'select', id: 'trading', label: 'The day', options: [['open', 'We traded'], ['closed', 'Closed all day'],
           ...(isMgmt(D) ? [] : [['closed_y', 'We were closed yesterday']] as [string, string][])] },
       { type: 'group', show: traded, fields: [
-      { type: 'select', id: 'grades', label: 'Grades', options: [['normal', 'Normal eggs only'], ['all', 'All grades (big, cracked, jumbo)']] },
+      { type: 'select', id: 'grades', label: 'Grades', options: [['normal', 'Normal eggs only'], ['all', 'All grades (cracked, jumbo)']] },
       ...section('i_', 'Issued (credit, bulk) not yet entered'),
       { type: 'text', id: 'party', label: 'Issued to', placeholder: 'Name, or "Various credit customers"' },
       ...section('d_', 'Damaged not yet entered'),

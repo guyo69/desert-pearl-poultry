@@ -6,6 +6,7 @@ import { collectForm, saleForm } from './forms/forms';
 import { Icon } from './ui/icons';
 import { UIProvider, useUI } from './ui/ui';
 import { AlertList } from './ui/widgets';
+import { ScreenGuard } from './ui/ScreenGuard';
 import { Login, MfaEnroll, MfaVerify, NewPassword } from './views/Auth';
 import { Alerts, Money, Overview, Report, Stock, type ViewProps } from './views/Management';
 import { ClerkHome, Feed, Health, Records, Water } from './views/Farm';
@@ -175,7 +176,7 @@ function Shell({ D, version, err, signOut, reload }: { D: Dashboard; version: nu
       <main key={tab}>
         {D.me.backup_codes_left !== undefined && D.me.mfa_enabled && D.me.backup_codes_left <= 2 && tab !== 'me' && <div className="banner warn"><div><b>{D.me.backup_codes_left} backup code{D.me.backup_codes_left === 1 ? '' : 's'} left</b><p>Make a new set so you can still sign in if your phone is lost.</p></div><button className="btn sm" onClick={() => go('me')}>My account</button></div>}
         {err && online && <div className="banner warn"><div><b>Could not refresh</b><p>{err}</p></div><button className="btn sm" onClick={reload}>Try again</button></div>}
-        {(tabs.includes(tab) || tab === 'me' ? TABS[tab] : TABS[tabs[0]]).view(props)}
+        <ScreenGuard name={tabs.includes(tab) || tab === 'me' ? tab : tabs[0]}>{(tabs.includes(tab) || tab === 'me' ? TABS[tab] : TABS[tabs[0]]).view(props)}</ScreenGuard>
       </main>
     </div>
     <nav className="bnav" aria-label="Sections">{tabs.slice(0, 5).map((t) => <button key={t} aria-current={tab === t} onClick={() => go(t)}><span className="pill"><Icon name={TABS[t].icon} /></span><span>{TABS[t].label}</span></button>)}</nav>

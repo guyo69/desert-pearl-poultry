@@ -59,6 +59,14 @@ Before you push, run `npm test` and `npm run build`. If you touch SQL, also run 
 - **`rpc_weekly_report()`** feeds the Report screen. It covers the last 7 days to yesterday, for the owner and the farm manager only.
 - **The weekly digest** goes out Mondays at 06:30 Nairobi time (03:30 UTC), with a retry at 08:30. `digest_enqueue()` sends one call per recipient, and the `digest_log` and `nudge_log` tables stop anything sending twice.
 
+## Business rules (from the client, 2 Nov 2026)
+
+- **Owner is view-only for the day's records.** The `owner_view_only` trigger refuses any insert, update or delete by a signed-in owner on the record tables. Setup stays open to the owner: houses, staff, prices, thresholds, the medicine list, the schedule and go-live opening balances. In the UI, `canEnter(D)` hides entry buttons.
+- **No corrections from the app.** The Correct button is gone. The app records what staff enter and never changes it.
+- **Big eggs count as Normal.** The forms no longer offer Big; older records keep their Big figures, shown inside Normal.
+- **"Issue eggs" means sending eggs to another location** (a transfer the receiver confirms), one destination per entry. The older stock-out form is now "Out, no sale".
+- **Credit is a payment method on a sale** (`rpc_sale_with_credit`, `sales.credit`); credit needs the customer's name and does not reach any cash account.
+
 ## Open items
 
 - **Email secrets:** add these in Supabase under Edge Functions → Secrets:

@@ -18,31 +18,35 @@ export function PosToday(p: ViewProps) {
   const it = D.transit.filter((x) => x.to_loc === loc);
   const closed = D.counts_today.some((c) => c.location_id === loc && c.kind === 'close');
   const A = alertsFor(D).filter((a) => !a.loc || a.loc === loc);
-  const bar = (k: 'cash' | 'till' | 'paybill', c: string) => (s.value ? <span style={{ width: `${(s[k] / s.value) * 100}%`, background: `var(${c})` }} /> : null);
+  const credit = Math.max(0, s.value - s.cash - s.till - s.paybill);
+  const bar = (k: 'cash' | 'till' | 'paybill' | 'credit', c: string) => { const v = k === 'credit' ? credit : s[k]; return s.value && v ? <span style={{ width: `${(v / s.value) * 100}%`, background: `var(${c})` }} /> : null; };
   return <>
     <ShopSteps D={D} loc={loc} />
     {it.map((x) => <div className="banner info" key={x.id}><div><b>Delivery on the way from {D.locations.find((l) => l.id === x.from_loc)?.short}</b>
       <p>{mix({ n: x.sent_n, b: x.sent_b ?? 0, c: x.sent_c, j: x.sent_j })} · sent {timeOf(x.recorded_at)}</p></div>
       <button className="btn" onClick={() => ui.openForm(receiveForm(D, x))}><Icon name="inbox" />Receive</button></div>)}
+    <Card title="Issue eggs"><div className="li" style={{ border: 0, padding: 0 }}>
+      <span className="av" style={{ background: 'var(--l-tuala)' }}><Icon name="truck" /></span>
+      <div className="mid"><b>Send to another location</b><small>They confirm the count on arrival.</small></div>
+      <button className="btn sm" onClick={() => ui.openForm(dispatchForm(D, loc))}>Issue eggs</button></div></Card>
     <div className="kpis">
       <Kpi label="Sales today" value={kes(s.value)} sub={`${s.cnt} sale${s.cnt === 1 ? '' : 's'}`} />
       <Kpi label="Eggs sold" value={eggs(s.pcs)} />
-      <Kpi label="On hand" value={eggs(tot(st))} sub={`${eggs(st.n)} normal`} />
+      <Kpi label="On hand" value={eggs(tot(st))} sub={`${eggs(st.n + st.b)} normal`} />
       <Kpi label="Cash in drawer" value={kes(balance(D, `CASH:${loc}`))} sub="expected" />
     </div>
     <Card title="How customers paid" aside={<span className="muted">{kes(s.value)}</span>}>
-      <div className="splitbar">{bar('cash', '--l-farm')}{bar('till', '--l-tuala')}{bar('paybill', '--l-van')}</div>
-      <Legend items={[['--l-farm', `Cash ${n0(s.cash)}`], ['--l-tuala', `Till ${n0(s.till)}`], ['--l-van', `Paybill ${n0(s.paybill)}`]]} /></Card>
+      <div className="splitbar">{bar('cash', '--l-farm')}{bar('till', '--l-tuala')}{bar('paybill', '--l-van')}{bar('credit', '--l-lucky')}</div>
+      <Legend items={[['--l-farm', `Cash ${n0(s.cash)}`], ['--l-tuala', `Till ${n0(s.till)}`], ['--l-van', `Paybill ${n0(s.paybill)}`], ...(credit ? [['--l-lucky', `Credit ${n0(credit)}`] as [string, string]] : [])]} /></Card>
     <div className="tiles">
       <Tile icon="receipt" label="Record sale" color="--l-farm" onClick={() => ui.openForm(saleForm(D, loc))} />
       <Tile icon="inbox" label="Receive stock" color="--info" onClick={() => it[0] ? ui.openForm(receiveForm(D, it[0])) : ui.toast('No deliveries waiting for you.')} />
-      <Tile icon="truck" label="Issue eggs out" color="--l-tuala" onClick={() => ui.openForm(issueForm(D, loc))} />
+      <Tile icon="truck" label="Issue eggs" color="--l-tuala" onClick={() => ui.openForm(dispatchForm(D, loc))} />
       <Tile icon="crack" label="Damaged eggs" color="--f-none" onClick={() => ui.openForm(breakageForm(D, loc))} />
       <Tile icon="list" label="Daily stock sheet" color="--l-rayan" onClick={() => ui.openForm(shopDayForm(D, loc))} />
       <Tile icon="wallet" label="Expense" color="--l-lucky" onClick={() => ui.openForm(expenseForm(D, loc, false))} />
       <Tile icon="swap" label="Move money" color="--l-rayan" onClick={() => ui.openForm(moveForm(D, loc))} />
       <Tile icon="count" label={closed ? 'Closed ✓' : 'Close the day'} color="--l-van" onClick={() => ui.openForm(countForm(D, loc, 'close'))} />
-      {loc === 'VAN' && <Tile icon="truck" label="Deliver to shop" color="--l-tuala" onClick={() => ui.openForm(dispatchForm(D, loc))} />}
     </div>
     {A.length > 0 && <Card title="For your attention"><AlertList list={A} /></Card>}
   </>;
@@ -50,21 +54,21 @@ export function PosToday(p: ViewProps) {
 
 export function PosStock(p: ViewProps) {
   const { D } = p, ui = useUI(), loc = myLoc(p), L = dayLedger(D, loc, D.today);
-  const row = (label: string, q: Q, sign = '') => <tr><td>{label}</td>{(['n', 'b', 'j', 'c'] as const).map((k) => <td key={k}>{q[k] ? `${sign}${k === 'j' ? `${q[k]} pc` : eggs(q[k])}` : '–'}</td>)}</tr>;
+  const row = (label: string, q: Q, sign = '') => <tr><td>{label}</td>{(['n', 'j', 'c'] as const).map((k) => { const v = k === 'n' ? q.n + (q.b ?? 0) : q[k]; return <td key={k}>{v ? `${sign}${k === 'j' ? `${v} pc` : eggs(v)}` : '–'}</td>; })}</tr>;
   return <>
     <Card title="Today's stock sheet" aside={<span className="muted">{D.locations.find((l) => l.id === loc)?.name}</span>}>
-      <div className="tblw"><table><thead><tr><th></th><th>Normal</th><th>Big</th><th>Jumbo</th><th>Cracked</th></tr></thead>
-        <tbody>{row('Opening', L.open)}{loc === 'FARM' && row('+ Collected', L.coll, '+')}{row('+ Received', L.recv, '+')}{row('− Sent out', L.out, '−')}{row('− Issued', L.iss, '−')}{row('− Sold', L.sold, '−')}{row('− Damaged', L.brk, '−')}{row('± Count variance', L.adj)}</tbody>
+      <div className="tblw"><table><thead><tr><th></th><th>Normal</th><th>Jumbo</th><th>Cracked</th></tr></thead>
+        <tbody>{row('Opening', L.open)}{loc === 'FARM' && row('+ Collected', L.coll, '+')}{row('+ Received', L.recv, '+')}{row('− Issued (sent)', L.out, '−')}{row('− Out, no sale', L.iss, '−')}{row('− Sold', L.sold, '−')}{row('− Damaged', L.brk, '−')}{row('± Count variance', L.adj)}</tbody>
         <tfoot>{row('On hand (expected)', L.close)}</tfoot></table></div>
       <div className="row-btns" style={{ marginTop: 12 }}><button className="btn sm alt" onClick={() => ui.openForm(countForm(D, loc, 'open'))}><Icon name="count" />Opening count</button>
         <button className="btn sm" onClick={() => ui.openForm(countForm(D, loc, 'close'))}><Icon name="count" />Close the day</button>
-        {loc !== 'FARM' && <button className="btn sm alt" onClick={() => ui.openForm(dispatchForm(D, loc))}><Icon name="truck" />Send eggs</button>}
-        <button className="btn sm alt" onClick={() => ui.openForm(issueForm(D, loc))}><Icon name="truck" />Issue out</button>
+        <button className="btn sm alt" onClick={() => ui.openForm(dispatchForm(D, loc))}><Icon name="truck" />Issue eggs</button>
+        <button className="btn sm alt" onClick={() => ui.openForm(issueForm(D, loc))}><Icon name="box" />Out, no sale</button>
         <button className="btn sm alt" onClick={() => ui.openForm(shopDayForm(D, loc))}><Icon name="list" />Daily stock sheet</button></div></Card>
     <Card title="Last 7 days" aside={<span className="muted">pieces</span>}><div className="tblw"><table>
-      <thead><tr><th>Day</th><th>Opening</th><th>In</th><th>Issued</th><th>Damaged</th><th>Sold</th><th>Closing</th></tr></thead>
+      <thead><tr><th>Day</th><th>Opening</th><th>In</th><th>Issued / out</th><th>Damaged</th><th>Sold</th><th>Closing</th></tr></thead>
       <tbody>{range(addDays(D.today, -6), D.today).reverse().map((d) => { const x = dayLedger(D, loc, d);
-        return <tr key={d}><td>{dlabel(d)}</td><td>{n0(tot(x.open))}</td><td>{n0(tot(x.recv) + tot(x.coll))}</td><td>{tot(x.iss) ? n0(tot(x.iss)) : '–'}</td><td>{tot(x.brk) || '–'}</td><td>{n0(tot(x.sold))}</td><td>{n0(tot(x.close))}</td></tr>; })}</tbody></table></div></Card>
+        return <tr key={d}><td>{dlabel(d)}</td><td>{n0(tot(x.open))}</td><td>{n0(tot(x.recv) + tot(x.coll))}</td><td>{tot(x.iss) + tot(x.out) ? n0(tot(x.iss) + tot(x.out)) : '–'}</td><td>{tot(x.brk) || '–'}</td><td>{n0(tot(x.sold))}</td><td>{n0(tot(x.close))}</td></tr>; })}</tbody></table></div></Card>
   </>;
 }
 

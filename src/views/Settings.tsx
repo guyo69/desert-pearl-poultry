@@ -2,7 +2,7 @@
 // activity log and the sign-in security log.
 import { useCallback, useEffect, useState } from 'react';
 import { auth, requestReload, rpc, securityLog, staffAdmin, type SecurityEvent } from '../lib/api';
-import { dnum, n0 } from '../lib/format';
+import { dlabel, dnum, n0, timeOf } from '../lib/format';
 import { disablePush, enablePush, pushStatus } from '../lib/push';
 import type { Settings as S, StaffAdminRow, StaffLite } from '../lib/types';
 import { houseForm, openingForm, staffForm } from '../forms/forms';
@@ -14,7 +14,7 @@ import { RecordList } from './common';
 import type { ViewProps } from './Management';
 
 const ROLE: Record<string, string> = { owner: 'Owner', manager: 'Farm Manager', clerk: 'Production Clerk', pos: 'Sales point' };
-const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString('en-KE', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
+const when = (iso: string | null) => (iso ? `${dlabel(iso.slice(0, 10))} ${timeOf(iso)}` : '');
 
 /** Asks for a current authenticator code, then runs an action that needs it. */
 function CodePrompt({ label, action, onDone }: { label: string; action: (code: string) => Promise<void>; onDone: () => void }) {
@@ -138,7 +138,7 @@ function SecurityLog() {
 }
 
 const FIELDS: [keyof S, string, string][] = [
-  ['tray_n', 'Normal eggs, per tray of 30', 'KES'], ['pc_n', 'Normal eggs, loose', 'KES each'], ['tray_b', 'Big eggs, per tray of 30', 'KES'], ['pc_b', 'Big eggs, loose', 'KES each'],
+  ['tray_n', 'Normal eggs, per tray of 30', 'KES'], ['pc_n', 'Normal eggs, loose', 'KES each'],
   ['tray_c', 'Cracked eggs, per tray', 'KES'], ['pc_c', 'Cracked eggs, loose', 'KES each'], ['pc_j', 'Jumbo / double yolk', 'KES each'],
   ['feed_buffer_bags', 'Feed buffer (weekly need)', 'bags'], ['bag_kg', 'Feed bag size', 'kg'], ['bag_price', 'Feed price per bag', 'KES'],
   ['tank_capacity_l', 'Water tank size', 'L'], ['water_drop_pct', 'Water drop alert', '%'], ['water_ratio_min', 'Water per kg feed, lowest normal', 'L'], ['water_ratio_max', 'Water per kg feed, highest normal', 'L'],
@@ -200,8 +200,8 @@ export function Setup(p: ViewProps & { signOut: (everywhere?: boolean) => void }
   return <>
     {owner && <Seg value={sec} options={[['activity', 'Activity log'], ['setup', 'Setup'], ['security', 'Security']]} onChange={setSec} />}
     {sec === 'security' ? <SecurityLog /> : sec === 'activity' ? <Card title="Activity log" aside={<Seg value={loc} options={[['all', 'All'], ...D.locations.map((l): [string, string] => [l.id, l.short])]} onChange={setLoc} />}>
-      <RecordList D={D} version={version} loc={loc === 'all' ? null : loc} canVoid limit={40} />
-      <p className="muted" style={{ fontSize: 13, margin: '10px 0 0' }}>Records are never deleted. Correct marks a record as wrong; stock and money are recalculated without it.</p></Card>
+      <RecordList D={D} version={version} loc={loc === 'all' ? null : loc} canVoid={false} limit={40} />
+      <p className="muted" style={{ fontSize: 13, margin: '10px 0 0' }}>Every record as it was entered. Nothing here is changed or deleted.</p></Card>
     : <>
       {!D.settings.go_live && <div className="banner warn"><div><b>Enter opening balances</b><p>On go-live morning, count eggs at every location, cash, M-Pesa and bank balances, feed and water, then enter them here.</p></div>
         <button className="btn yolk" onClick={() => ui.openForm(openingForm(D))}>Opening balances</button></div>}

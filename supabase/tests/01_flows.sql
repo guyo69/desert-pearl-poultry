@@ -166,13 +166,21 @@ do $$ declare d jsonb; v_open numeric; v_sales numeric; v_exp numeric; v_fee num
   assert v_tot = 180000 + 502 + 550 - 50 - 13 - 50, 'total funds ' || v_tot;
 end $$;
 select count(*) as activity_rows from activity(100);
--- void the Rayan sale: stock and cash come back
+-- the owner account is view-only: corrections are refused (2 Nov 2026)
+select t_err($$select rpc_void('sale', (select id from sales where location_id='RAYAN'), 'Entered twice')$$, 'view-only');
+-- the correction itself still works underneath (trigger lifted only for this check)
+reset role;
+alter table public.sales disable trigger owner_view_only;
+set role authenticated;
 select rpc_void('sale', (select id from sales where location_id='RAYAN'), 'Entered twice');
 do $$ begin
   assert (select n from v_stock where location_id='RAYAN') = 58, 'stock restored after void';
   assert (select balance from v_balances where account_id='CASH:RAYAN') = 1400, 'cash after void';
 end $$;
 select t_err($$select rpc_void('sale', (select id from sales where location_id='RAYAN'), 'again')$$, 'already corrected');
+reset role;
+alter table public.sales enable trigger owner_view_only;
+set role authenticated;
 select rpc_save_settings('{"feed_buffer_bags":315,"bag_kg":7,"tray_n":480}'::jsonb);
 do $$ begin assert (select feed_buffer_kg from settings) = 2205, 'settings: buffer kept in bags'; end $$;
 select rpc_save_settings('{"bag_kg":50}'::jsonb);

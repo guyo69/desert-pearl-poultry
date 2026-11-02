@@ -155,7 +155,7 @@ reset role;
 insert into stock_adj (d, location_id, kind, n, party) values (biz_today() - 2, 'TUALA', 'in', 90, 'Earlier stock');
 select _rebase('TUALA', biz_today() - 2, 90, 0, 0, 0);
 set role authenticated;
-select t_as('00000000-0000-0000-0000-000000000001');
+select t_as('00000000-0000-0000-0000-000000000002');   -- farm manager (the owner is view-only)
 do $$ declare st0 record; st1 record; c0 int; begin
   st0 := t_stock('TUALA');
   c0 := (select adj_n from stock_counts where location_id = 'TUALA' and d = biz_today() and kind = 'close' and voided_at is null);
@@ -180,6 +180,8 @@ do $$ declare b0 numeric := (select sum(balance) from v_balances); begin
 end $$;
 
 -- ---------- 12. corrections and privileges ----------
+-- corrections are owner-only and the owner is view-only, so the trigger is lifted for this check
+alter table public.stock_adj disable trigger owner_view_only;
 set role authenticated;
 select t_as('00000000-0000-0000-0000-000000000001');
 do $$ declare x bigint; st0 record; begin
@@ -190,6 +192,7 @@ do $$ declare x bigint; st0 record; begin
   assert exists (select 1 from activity(200) a where a.kind = 'issue'), 'issues in activity';
 end $$;
 reset role;
+alter table public.stock_adj enable trigger owner_view_only;
 do $$ declare f text; begin
   foreach f in array array['public._stock4(text, date)', 'public._price4(integer, integer, integer, integer)', 'public._day(public.staff, date)',
                            'public._rebase(text, date, integer, integer, integer, integer, boolean)', 'public._bump()',
