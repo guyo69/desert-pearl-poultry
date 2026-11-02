@@ -2,8 +2,8 @@
 // Steps are worked out from the dashboard; gaps come from the server's completeness check.
 import { type ReactNode, useEffect, useState } from 'react';
 import { type Gap, loadGaps } from '../lib/api';
-import { dlabel, eggs } from '../lib/format';
-import { feedUsed, locName, produced, salesOn, tankInfo, waterOn } from '../lib/metrics';
+import { dlabel, dshort, eggs } from '../lib/format';
+import { closedToday, feedUsed, locName, produced, salesOn, tankInfo, waterOn } from '../lib/metrics';
 import type { Dashboard } from '../lib/types';
 import {
   collectForm, countForm, dispatchForm, feedUseForm, houseDayForm, issueForm, mortForm, receiveForm, saleForm, shopDayForm, tankForm, waterIntakeForm,
@@ -51,6 +51,9 @@ export function ShopSteps({ D, loc }: { D: Dashboard; loc: string }) {
   const opened = D.counts_today.some((c) => c.location_id === loc && c.kind === 'open');
   const closed = D.counts_today.some((c) => c.location_id === loc && c.kind === 'close');
   const waiting = D.transit.filter((x) => x.to_loc === loc), s = salesOn(D, [t], loc);
+  const l = D.locations.find((x) => x.id === loc);
+  // on the regular closing day nothing is due unless they choose to trade
+  const resting = !!l && closedToday(D, l) && !opened && !s.cnt;
   const steps: Step[] = [
     { label: 'Opening count', detail: opened ? 'Done: the day started from a real count' : 'Count the eggs on hand before selling', done: opened, go: opened ? undefined : () => ui.openForm(countForm(D, loc, 'open')), act: 'Count' },
     { label: 'Receive deliveries', detail: waiting.length ? `${waiting.length} on the way: count what arrives and any damaged` : has(D, loc, t, 'recv') ? 'Received today' : 'Nothing waiting', done: !waiting.length,
@@ -59,29 +62,44 @@ export function ShopSteps({ D, loc }: { D: Dashboard; loc: string }) {
     { label: 'Eggs issued out', detail: has(D, loc, t, 'issue') ? 'Recorded today' : 'Credit customers, bulk orders collected', done: has(D, loc, t, 'issue'), optional: true, go: () => ui.openForm(issueForm(D, loc)), act: 'Issue' },
     { label: 'Close the day', detail: closed ? 'Closed: stock and cash counted' : 'Count the eggs left and the cash in the drawer', done: closed, go: () => ui.openForm(countForm(D, loc, 'close')), act: 'Close' },
   ];
-  return <Steps title="Today's steps" steps={steps} aside={<button className="lnk" onClick={() => ui.openForm(shopDayForm(D, loc))}>Daily stock sheet</button>} />;
+  return <Steps title={resting ? 'Closed today: regular closing day' : "Today's steps"} steps={resting ? steps.map((x) => ({ ...x, optional: true })) : steps}
+    aside={<button className="lnk" onClick={() => ui.openForm(shopDayForm(D, loc))}>Daily stock sheet</button>} />;
+}
+
+/** Owner and farm manager: what was not entered on the last 14 tracked days, newest first. Null while loading. */
+export function useGaps(version?: number): Gap[] | null {
+  const [gaps, setGaps] = useState<Gap[] | null>(null);
+  useEffect(() => { loadGaps(14).then((g) => setGaps(g.slice().reverse())).catch(() => setGaps([])); }, [version]);
+  return gaps;
+}
+
+/** "9 records on 3 days (29 Oct to 1 Nov)": the one-line summary used on the Overview. */
+export function gapSummary(gaps: Gap[]) {
+  const days = [...new Set(gaps.map((g) => g.day))].sort();
+  const records = gaps.reduce((a, g) => a + g.missing.length, 0);
+  const span = days.length > 1 ? ` (${dshort(days[0])} to ${dshort(days.at(-1)!)})` : ` (${dlabel(days[0])})`;
+  return `${records} record${records === 1 ? '' : 's'} not entered on ${days.length} day${days.length === 1 ? '' : 's'}${span}`;
 }
 
 /**
  * Owner and farm manager: days in the last two weeks with something missing,
  * from the same server check that sends the morning reminders (closed days
  * and regular closing days are already left out). Each line opens the sheet
- * that fills it.
+ * that fills it. Shows the newest few; the rest open on request.
  */
-export function MissingDays({ D, version }: { D: Dashboard; version?: number }) {
+export function MissingDays({ D, gaps }: { D: Dashboard; gaps: Gap[] | null }) {
   const ui = useUI();
-  const [gaps, setGaps] = useState<Gap[] | null>(null);
-  useEffect(() => { loadGaps(14).then((g) => setGaps(g.slice().reverse())).catch(() => setGaps([])); }, [version]);
+  const [all, setAll] = useState(false);
   if (!gaps?.length) return null;
-  const shown = gaps.slice(0, 12);
+  const shown = all ? gaps : gaps.slice(0, 5);
   const open = (g: Gap) => ui.openForm(g.scope === 'outlet' ? shopDayForm(D, g.id, g.day) : houseDayForm(D, g.day));
   return <Card title="Days with gaps" aside={<span className="chip sev-amber">{gaps.length}</span>}>
-    <p className="muted" style={{ margin: '0 0 8px', fontSize: 13.5 }}>Fill a missed day from the paper book, or mark an outlet closed. The app works out opening stock, hens, age and lay rate for that day.</p>
+    <p className="muted" style={{ margin: '0 0 8px', fontSize: 13.5 }}>{gapSummary(gaps)}. Fill a missed day from the paper book, or mark an outlet closed.</p>
     <div className="list">{shown.map((g) => <div className="li" key={`${g.day}-${g.scope}-${g.id}`}>
       <span className="av" style={{ background: 'var(--f-watch)' }}><Icon name="clock" /></span>
       <div className="mid"><b>{dlabel(g.day)} · {g.name}</b><small>Not entered: {g.missing.join(', ')}</small></div>
       <div className="end"><button className="act" onClick={() => open(g)}>Fill in</button></div></div>)}</div>
-    {gaps.length > shown.length && <p className="muted" style={{ margin: '8px 0 0', fontSize: 13 }}>{gaps.length - shown.length} more, further back.</p>}
+    {gaps.length > 5 && <button className="lnk" style={{ marginTop: 8 }} onClick={() => setAll(!all)}>{all ? 'Show fewer' : `Show all ${gaps.length}`}</button>}
   </Card>;
 }
 

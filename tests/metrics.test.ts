@@ -161,3 +161,15 @@ describe('big and damaged eggs, issues', async () => {
     expect(mix({ n: 60, b: 31, c: 5, j: 2 })).toBe('2 tr normal · 1 tr 1 pc big · 2 jumbo · 5 pc cracked');
   });
 });
+
+describe('closing days and lay rate', () => {
+  it('knows the ISO weekday and the regular closing day', async () => {
+    const { isoDow, closedToday } = await import('../src/lib/metrics');
+    expect(isoDow('2026-11-01')).toBe(7); // Sunday
+    expect(isoDow('2026-11-02')).toBe(1); // Monday
+    const D = { today: '2026-11-01' } as never;
+    expect(closedToday(D, { closed_dow: [7] })).toBe(true);
+    expect(closedToday(D, { closed_dow: [] })).toBe(false);
+    expect(closedToday(D, {})).toBe(false);
+  });
+});

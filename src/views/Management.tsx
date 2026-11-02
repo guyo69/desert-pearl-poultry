@@ -1,7 +1,7 @@
 // Owner and Farm Manager screens: overview, alerts, stock, money, report.
 import { addDays, dlabel, dnum, dshort, eggs, kes, kesS, n0, pct, range } from '../lib/format';
 import {
-  alertsFor, mix, produced, balance, collected, dayLedger, feedInfo, hensNow, intelligence, layRate, outletLoss, salesOn, stockNow, tankInfo, tot,
+  alertsFor, closedToday, mix, produced, balance, collected, dayLedger, feedInfo, hensNow, intelligence, layRate, outletLoss, salesOn, stockNow, tankInfo, tot,
   totalFunds, waterOn, waterTrend,
 } from '../lib/metrics';
 import type { Dashboard } from '../lib/types';
@@ -13,7 +13,7 @@ import { loadWeeklyReport, type WeeklyInsight, type WeeklyReport } from '../lib/
 import { AlertList, BarList, Card, Delta, Empty, FeedCard, Kpi, LocDot, TankCard, sevClass, sevVar } from '../ui/widgets';
 import { HouseLayChart, PayChart, ProductionChart, SalesChart, WaterChart, houseColor } from './charts';
 import { NoticeList } from './common';
-import { MissingDays } from './Journey';
+import { MissingDays, gapSummary, useGaps } from './Journey';
 
 export interface ViewProps { D: Dashboard; version: number; go: (tab: string) => void }
 
@@ -23,10 +23,10 @@ export function Overview({ D, go, version }: ViewProps) {
   const cT = produced(D, [D.today]), cY = produced(D, [y]);
   const sT = salesOn(D, [D.today]), sY = salesOn(D, [y]);
   const wY = waterOn(D, [y]), wPrev = waterOn(D, range(addDays(y, -7), addDays(y, -1))) / 7;
-  const A = alertsFor(D);
+  const A = alertsFor(D), gaps = useGaps(version);
+  const nGaps = gaps?.length ? 1 : 0;
   return <>
     <div className="sample"><div><h2>{dlabel(D.today)}</h2><div className="muted">{D.me.role === 'owner' ? 'All five sales points' : 'Central Farm and sales points'} · {n0(hensNow(D))} hens</div></div></div>
-    <MissingDays D={D} version={version} />
     <div className="kpis">
       <Kpi label="Eggs collected today" value={eggs(cT)} sub={`Yesterday ${eggs(cY)}`} />
       <Kpi label="Lay rate · 7 days" value={pct(layRate(D, w1))} sub={<><Delta a={layRate(D, w1)} b={layRate(D, w0)} pts /> vs week before</>} />
@@ -38,7 +38,14 @@ export function Overview({ D, go, version }: ViewProps) {
       <FeedCard D={D} actions={<button className="btn sm alt" onClick={() => ui.openForm(feedInForm(D))}><Icon name="sack" />Feed received</button>} />
       <TankCard D={D} actions={<button className="btn sm alt" onClick={() => ui.openForm(tankForm(D))}><Icon name="tank" />Tank level</button>} />
     </div>
-    <Card title="Needs attention" aside={<button className="lnk" onClick={() => go('alerts')}>See all {A.length}</button>}><AlertList list={A} limit={4} /></Card>
+    <Card title="Needs attention" aside={<button className="lnk" onClick={() => go('alerts')}>See all {A.length + nGaps}</button>}>
+      {gaps?.length ? <div className="alerts" style={{ marginBottom: A.length ? 8 : 0 }}>
+        <button className="alert" style={{ border: 0, width: '100%', textAlign: 'left', cursor: 'pointer', font: 'inherit', color: 'inherit' }} onClick={() => go('alerts')}>
+          <span className="stripe" style={{ background: sevVar('amber') }} />
+          <div style={{ minWidth: 0 }}><b>Days with gaps</b><p>{gapSummary(gaps)}. See all to fill them in.</p></div>
+        </button></div> : null}
+      {A.length || !gaps?.length ? <AlertList list={A} limit={gaps?.length ? 3 : 4} /> : null}
+    </Card>
     <Card title="Egg production"><ProductionChart D={D} /></Card>
     <Card title="Water drunk"><WaterChart D={D} /></Card>
     <Card title="Sales"><SalesChart D={D} /></Card>
@@ -47,8 +54,8 @@ export function Overview({ D, go, version }: ViewProps) {
         const st = stockNow(D, l.id), s = salesOn(D, [D.today], l.id), it = D.transit.filter((x) => x.to_loc === l.id);
         const opened = D.counts_today.some((c) => c.location_id === l.id && c.kind === 'open');
         return <div className="loc" key={l.id}><div className="t"><span><LocDot id={l.id} />{l.name}</span>
-          {it.length ? <span className="chip sev-info">{eggs(it.reduce((a, x) => a + x.sent_n + x.sent_c + x.sent_j, 0))} on the way</span>
-            : opened ? <span className="chip sev-ok">Open</span> : <span className="chip sev-amber">Not opened</span>}</div>
+          {it.length ? <span className="chip sev-info">{eggs(it.reduce((a, x) => a + x.sent_n + (x.sent_b ?? 0) + x.sent_c + x.sent_j, 0))} on the way</span>
+            : opened ? <span className="chip sev-ok">Open</span> : closedToday(D, l) ? <span className="chip">Closed today</span> : <span className="chip sev-amber">Not opened</span>}</div>
           <dl><div><dt>Stock</dt><dd>{eggs(tot(st))}</dd></div><div><dt>Sales today</dt><dd>{kesS(s.value)}</dd></div><div><dt>Cash at hand</dt><dd>{kesS(balance(D, `CASH:${l.id}`))}</dd></div></dl></div>;
       })}</div>
     </Card>
@@ -56,11 +63,11 @@ export function Overview({ D, go, version }: ViewProps) {
 }
 
 export function Alerts({ D, version }: ViewProps) {
-  const ui = useUI(), A = alertsFor(D);
+  const ui = useUI(), A = alertsFor(D), gaps = useGaps(version);
   const houses = D.houses.map((h) => ({ h, q: collected(D, [D.today], h.id), hens: hensNow(D, h.id), w: waterTrend(D, h.id) }));
   return <>
     <div className="sample"><div><h2>{D.me.role === 'manager' ? `Hello, ${D.me.display_name}` : 'Alerts'}</h2><div className="muted">{dlabel(D.today)} · Central Farm · {n0(hensNow(D))} hens</div></div></div>
-    {D.me.role === 'manager' && <MissingDays D={D} version={version} />}
+    <MissingDays D={D} gaps={gaps} />
     <Card title="Alerts" aside={<span className={`chip ${A.some((a) => a.sev === 'red' || a.sev === 'orange') ? 'sev-orange' : 'sev-info'}`}>{A.length} open</span>}><AlertList list={A} /></Card>
     <div className="grid2"><FeedCard D={D} /><TankCard D={D} /></div>
     <div className="grid2">

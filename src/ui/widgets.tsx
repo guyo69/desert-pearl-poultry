@@ -69,7 +69,7 @@ export function FeedCard({ D, actions }: { D: Dashboard; actions?: ReactNode }) 
       <div className="facts">
         <div><b>{f.cover.toFixed(1)} days</b><span>of feed at {f.dailyBags.toFixed(1)} bags/day{f.estimated ? ' (plan)' : ''}</span></div>
         <div><b>{f.bags ? `${f.bags} bags` : 'None'}</b><span>to order for full buffer</span></div>
-        <div><b>{f.level < 0.25 ? 'Now' : dshort(f.noneDate)}</b><span>reaches No buffer if not restocked</span></div>
+        <div><b>{f.level < 0.25 ? 'Now' : dshort(f.noneDate)}</b><span>{f.level < 0.25 ? 'below the 25% reserve' : 'falls below the 25% reserve if not restocked'}</span></div>
       </div>
       {actions && <div className="row-btns" style={{ marginTop: 14 }}>{actions}</div>}
     </section>

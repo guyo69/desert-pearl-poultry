@@ -33,6 +33,10 @@ export const accName = (D: Dashboard, id: string) => D.accounts.find((a) => a.id
 export const cashAcc = (loc: string) => `CASH:${loc}`;
 export const LOC_COLORS: Record<string, string> = { FARM: '--l-farm', VAN: '--l-van', TUALA: '--l-tuala', RAYAN: '--l-rayan', LUCKY: '--l-lucky' };
 export const locColor = (id: string) => LOC_COLORS[id] ?? '--muted';
+/** ISO weekday of a YYYY-MM-DD date: 1 = Monday … 7 = Sunday. */
+export const isoDow = (d: string) => new Date(`${d}T00:00:00Z`).getUTCDay() || 7;
+/** A sales point's regular closing day (Sunday unless changed in the database). */
+export const closedToday = (D: Dashboard, l: { closed_dow?: number[] | null }) => (l.closed_dow ?? []).includes(isoDow(D.today));
 
 /* ---------------- stock ---------------- */
 export function stockNow(D: Dashboard, loc: string): Q {
@@ -209,7 +213,7 @@ export function alerts(D: Dashboard): Alert[] {
   for (const x of D.transit) A.push({ sev: 'info', icon: 'truck', loc: x.to_loc, to: ['owner', 'manager', 'pos'],
     title: `Delivery to ${locShort(D, x.to_loc)} not yet confirmed`, body: `${eggs(x.sent_n + (x.sent_b ?? 0) + x.sent_c + x.sent_j)} sent from ${locShort(D, x.from_loc)} on ${dlabel(x.d)}.` });
   if (s.go_live) for (const l of D.locations) {
-    if (!D.counts_today.some((c) => c.location_id === l.id && c.kind === 'open')) A.push({ sev: 'amber', icon: 'count', loc: l.id, to: ['owner', 'manager', 'pos'],
+    if (!closedToday(D, l) && !D.counts_today.some((c) => c.location_id === l.id && c.kind === 'open')) A.push({ sev: 'amber', icon: 'count', loc: l.id, to: ['owner', 'manager', 'pos'],
       title: `${l.name}: opening count not done`, body: 'Count the eggs on hand before selling.' });
   }
   // money
@@ -264,14 +268,14 @@ export function intelligence(D: Dashboard) {
   const lowMeds = D.medicines.filter((m) => m.active && m.stock <= m.reorder);
   const due = D.schedule.filter((e) => !e.done && daysBetween(D.today, e.due) >= -7 && daysBetween(D.today, e.due) <= 7);
   const margin = a.perEgg * 30 - a.costTray;
-  const chg = (x: number, z: number) => (z ? `${x >= z ? '+' : '−'}${Math.abs((x / z - 1) * 100).toFixed(1)}%` : 'n/a');
+  const chg = (x: number, z: number) => (z ? `${x >= z ? '+' : '−'}${Math.abs((x / z - 1) * 100).toFixed(1)}%` : '–');
   const waterDrop = houses.filter((x) => x.w.days >= 3 && x.w.change < -s.water_drop_pct / 100);
 
   const lead = [
     a.eggs ? `Egg output ${a.eggs >= b.eggs ? 'rose' : 'fell'} ${chg(a.eggs, b.eggs).replace(/^[+−]/, '')} week on week to ${n0(a.eggs / 30)} trays, with the flock laying at ${pct(a.lay)}.` : 'No egg collections were recorded last week.',
     worst && worst.r3 < worst.h.expected_lay - 0.03 ? `${worst.h.name} is the concern: ${pct(worst.r3)} over the last three days against about ${pct(worst.h.expected_lay, 0)} expected.` : '',
     `Sales came to ${kes(a.sales)} (${chg(a.sales, b.sales)}).`,
-    `Feed covers ${f.cover.toFixed(1)} days${f.level < 1 ? `; it reaches No buffer around ${dlabel(f.noneDate)} unless ${f.bags} bags are ordered` : ''}.`,
+    `Feed covers ${f.cover.toFixed(1)} days${f.level < 1 ? `; it falls below the 25% reserve around ${dlabel(f.noneDate)} unless ${f.bags} bags are ordered` : ''}.`,
     waterDrop.length ? `Water intake dropped in ${waterDrop.map((x) => x.h.name).join(' and ')}.` : '',
   ].filter(Boolean).join(' ');
 
@@ -281,7 +285,7 @@ export function intelligence(D: Dashboard) {
     text: `Two weeks ago ${pct(worst.r0)}, last week ${pct(worst.r1)}, last three days ${pct(worst.r3)}. Expected for ${houseAge(D, worst.h)}-week hens is about ${pct(worst.h.expected_lay, 0)}.${worst.w.days >= 3 ? ` Water yesterday ${n0(worst.w.yesterday)} L against ${n0(worst.w.avg)} L average.` : ''}`,
   });
   findings.push({ sev: f.band.sev, title: `Feed buffer at ${pct(f.level, 0)} (${f.band.label})`,
-    text: `${n0(f.stockBags)} bags in store, using ${f.dailyBags.toFixed(1)} bags a day.${f.bags ? ` Order ${f.bags} bags (${kes(f.bags * s.bag_price)}) by ${dlabel(addDays(D.today, Math.max(0, Math.floor(f.cover) - 2)))}.` : ''} Feed cost per tray is ${Number.isFinite(a.costTray) ? kes(a.costTray) : 'n/a'}${Number.isFinite(margin) ? `, leaving ${kes(margin)} per tray before labour and transport` : ''}.` });
+    text: `${n0(f.stockBags)} bags in store, using ${f.dailyBags.toFixed(1)} bags a day.${f.bags ? ` Order ${f.bags} bags (${kes(f.bags * s.bag_price)}) by ${dlabel(addDays(D.today, Math.max(0, Math.floor(f.cover) - 2)))}.` : ''} Feed cost per tray is ${Number.isFinite(a.costTray) ? kes(a.costTray) : 'not yet known'}${Number.isFinite(margin) ? `, leaving ${kes(margin)} per tray before labour and transport` : ''}.` });
   findings.push({ sev: waterDrop.length ? 'orange' : t && t.level < 0.5 ? t.band.sev : 'ok', title: `Water: ${n0(a.water)} L drunk last week`,
     text: `${Number.isFinite(a.ratio) ? `${a.ratio.toFixed(2)} litres per kg of feed (normal ${s.water_ratio_min}–${s.water_ratio_max}). ` : ''}${Number.isFinite(a.waterPerBird) ? `${(a.waterPerBird * 1000).toFixed(0)} ml per bird per day. ` : ''}${t ? `Tank at ${pct(t.level, 0)}.` : 'No tank reading yet.'}` });
   if (brk) findings.push({ sev: brk.rate * 100 > s.break_tol ? 'amber' : 'ok', title: `${locName(D, brk.loc)} loses the most eggs`,

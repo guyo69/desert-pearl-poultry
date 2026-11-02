@@ -11,7 +11,7 @@ export interface Settings {
   cash_tol: number; unbanked_max: number; break_tol: number; lay_drop_pts: number;
   timezone: string; go_live: string | null;
 }
-export interface Location { id: string; name: string; short: string; kind: 'farm' | 'van' | 'shop'; sort: number }
+export interface Location { id: string; name: string; short: string; kind: 'farm' | 'van' | 'shop'; sort: number; closed_dow?: number[] | null }
 export interface Account { id: string; name: string; kind: 'cash' | 'till' | 'paybill' | 'bank'; location_id: string | null; sort: number }
 export interface House { id: string; name: string; birds_at_start: number; start_date: string; age_weeks_at_start: number; expected_lay: number; active: boolean; sort: number }
 export interface Medicine { id: number; name: string; category: string; unit: string; reorder: number; active: boolean; stock: number }
