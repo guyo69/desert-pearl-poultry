@@ -75,7 +75,7 @@ do $$ declare d date; w2 boolean; begin
   insert into cash_counts (d, location_id, counted, expected, diff) values ('2026-10-13', 'TUALA', 8500, 9000, -500);
 end $$;
 
-select plan(50);
+select plan(40);
 
 -- ---------- 1. completeness for one day ----------
 select is((completeness('2026-10-11')->'items'->0->>'scope'), 'house', 'houses come first');
@@ -91,22 +91,13 @@ select is((select i->'expected' from jsonb_array_elements(completeness('2026-10-
           'a location closed every day expects nothing');
 select ok(not (completeness('2026-10-01')->>'tracked')::boolean, 'days before tracking_from are not tracked');
 
--- ---------- 2. nudges are sent once ----------
-select ok(_completeness_nudges('2026-10-15') > 0, 'gaps on Thu 15 Oct are nudged');
-select is(_completeness_nudges('2026-10-15'), 0, 'a second run sends nothing');
-select is((select count(*)::int from notifications where dedupe_key = 'gap:2026-10-15:outlet:RAYAN'), 1, 'one nudge to Rayan Fedha');
-select is((select to_roles::text from notifications where dedupe_key = 'gap:2026-10-15:outlet:RAYAN'), '{pos}', 'sent to the sales point role');
-select is((select location_id from notifications where dedupe_key = 'gap:2026-10-15:outlet:RAYAN'), 'RAYAN', 'at its own location');
-select is((select count(*)::int from notifications where dedupe_key = 'gap-summary:2026-10-15'), 1, 'one summary to management');
-select is(_completeness_nudges('2026-10-14'), 0, 'a complete day sends nothing');
-select ok(_notify_once('t:1', 'info', 'x', 'y', array['owner']::staff_role[]) is not null and _notify_once('t:1', 'info', 'x', 'y', array['owner']::staff_role[]) is null,
-          '_notify_once inserts once per key');
-
--- daily_checks: the same morning twice sends nothing new and asks for nudge emails once
-delete from net.calls;
-select ok(daily_checks() >= 0, 'daily_checks runs before go-live data exists for yesterday');
-select is(daily_checks(), 0, 'a retry of the morning checks sends nothing');
-select cmp_ok((select count(*)::int from net.calls where body->>'mode' = 'nudges'), '<=', 1, 'nudge emails requested at most once');
+-- ---------- 2. notifications: reminders only (since 3 Nov 2026) ----------
+select ok(_notify_once('t:1', 'info', 'x', 'y', array['owner']::staff_role[], null, 'reminder') is not null
+          and _notify_once('t:1', 'info', 'x', 'y', array['owner']::staff_role[], null, 'reminder') is null, '_notify_once inserts once per key');
+select ok(_notify('amber', 'An event', 'y', array['owner']::staff_role[], null, 'feed') is null, 'event alerts are no longer sent');
+select ok(reminders('close') = 1 and reminders('close') = 0, 'the day close goes out once a day');
+select is((select to_roles::text from notifications where dedupe_key = 'close:' || biz_today()), '{owner,manager}', 'to the owner and farm manager');
+select ok(reminders('morning') >= 0 and reminders('morning') = 0 and reminders('evening') >= 0 and reminders('evening') = 0, 'reminders are sent at most once a day');
 
 -- ---------- 3. week 1: the baseline ----------
 select is(weekly_facts('2026-10-05', '2026-10-11', 'owner')->'baseline'->>'reason', 'first_week', 'week 1 has no prior week');
@@ -143,33 +134,22 @@ select ok(weekly_facts('2026-10-12', '2026-10-18', 'pos', 'RAYAN')->'production'
 select is((select jsonb_agg(o->>'id') from jsonb_array_elements(weekly_facts('2026-10-12', '2026-10-18', 'pos', 'RAYAN')->'sales'->'outlets') o),
           '["RAYAN"]'::jsonb, 'only its own outlet');
 select is(weekly_facts('2026-10-12', '2026-10-18', 'pos', 'RAYAN')->>'provisional', 'true', 'Rayan Fedha''s own week is provisional (12 of 18)');
-select ok(not exists (select 1 from jsonb_array_elements(digest_entries('2026-10-12', '2026-10-18', 'pos', 'RAYAN')->'sheets') s
-                       where s->>'name' in ('Money', 'Cash counts', 'Eggs collected', 'Feed')), 'no money or farm sheets for a sales point');
-select ok(not ((select s->'columns' from jsonb_array_elements(digest_entries('2026-10-12', '2026-10-18', 'pos', 'RAYAN')->'sheets') s where s->>'name' = 'Sales') ? 'Cash'),
-          'sales sheet without the cash column');
 select ok(weekly_facts('2026-10-12', '2026-10-18', 'clerk', 'FARM')->'sales' is null and weekly_facts('2026-10-12', '2026-10-18', 'clerk', 'FARM')->'production' is not null,
           'the clerk gets the farm, not outlet sales');
 select ok(weekly_facts('2026-10-12', '2026-10-18', 'manager', 'FARM')->'money' is not null, 'the manager gets money, as on the Money screen');
 
--- ---------- 6. the send log and the queue ----------
-select ok(mail_claim('digest', '00000000-0000-0000-0000-0000000000a1', '2026-10-12') is not null
-          and mail_claim('digest', '00000000-0000-0000-0000-0000000000a1', '2026-10-12') is null, 'one worker per person and week');
-delete from net.calls;
-select is(digest_enqueue('2026-10-12'), 2, 'queued for the manager and Rayan; owner already in progress; no email or opted out skipped');
-
 -- ---------- 7. privileges: the engine and the send log are for the edge function only ----------
 select ok(not has_function_privilege('authenticated', 'public.weekly_facts(date, date, public.staff_role, text)', 'execute')
-          and not has_function_privilege('authenticated', 'public.digest_entries(date, date, public.staff_role, text)', 'execute')
           and not has_function_privilege('authenticated', 'public.completeness(date)', 'execute'), 'signed-in users cannot call the engine directly');
-select ok(not has_function_privilege('authenticated', 'public.mail_claim(text, uuid, date)', 'execute')
-          and not has_function_privilege('authenticated', 'public.digest_enqueue(date)', 'execute')
-          and not has_function_privilege('authenticated', 'public._notify_once(text, text, text, text, public.staff_role[], text, text)', 'execute'),
-          'nor the send log, the queue or the alert writer');
+select ok(not has_function_privilege('authenticated', 'public.reminders(text)', 'execute')
+          and not has_function_privilege('authenticated', 'public._notify_once(text, text, text, text, public.staff_role[], text, text)', 'execute')
+          and to_regprocedure('public.digest_enqueue(date)') is null and to_regprocedure('public.daily_checks()') is null,
+          'nor the reminders or the alert writer; the digest and the old morning checks are gone');
 select ok(has_function_privilege('authenticated', 'public.gaps(integer)', 'execute')
           and has_function_privilege('authenticated', 'public.rpc_mark_day(text, text, text, date, boolean)', 'execute'), 'gaps and day marks are callable');
 select ok(not has_function_privilege('anon', 'public.gaps(integer)', 'execute') and not has_function_privilege('anon', 'public.rpc_mark_day(text, text, text, date, boolean)', 'execute'),
           'anonymous users can call none of it');
 select ok(not has_table_privilege('authenticated', 'public.digest_log', 'select') and not has_table_privilege('authenticated', 'public.day_marks', 'insert'),
-          'logs hidden, marks only through rpc_mark_day');
+          'old send logs hidden, marks only through rpc_mark_day');
 
 select * from finish();

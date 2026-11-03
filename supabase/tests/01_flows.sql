@@ -93,7 +93,7 @@ select t_as('00000000-0000-0000-0000-000000000007');
 do $$ begin
   assert (select count(*) from egg_collections) = 0, 'shop cannot see farm records';
   assert (select count(*) from transfers) = 1, 'shop sees only its own deliveries';
-  assert (select count(*) from notifications) = 1, 'shop sees its delivery notice only';
+  assert (select count(*) from notifications) = 0, 'no event notifications since 3 Nov 2026 (reminders only)';
 end $$;
 select rpc_receive_delivery((select id from transfers where to_loc='RAYAN'), 58, 0, 1, 0, 0);
 do $$ begin
@@ -190,10 +190,10 @@ select t_as('00000000-0000-0000-0000-000000000003');
 select t_err($$select rpc_save_settings('{}'::jsonb)$$, 'not available');   -- owner and farm manager only (since 3 Nov 2026)
 select t_as('00000000-0000-0000-0000-000000000002');
 select rpc_mark_read(array(select id from notifications));
-do $$ begin assert (select count(*) from notification_reads) > 0, 'reads'; end $$;
+-- (no event notifications to read since 3 Nov 2026; marking read still works)
 
--- ---------- morning checks ----------
+-- ---------- reminders (the only notifications since 3 Nov 2026) ----------
 reset role;
-select public.daily_checks() as daily_notifications;
+select public.reminders('morning') as morning_reminders, public.reminders('evening') as evening_reminders, public.reminders('close') as day_close;
 select sev, title from notifications order by id;
 select 'ALL TESTS PASSED' as result;

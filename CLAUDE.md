@@ -1,6 +1,6 @@
 # Desert Pearl Poultry Manager
 
-A live production web app (installable on phones) for Desert Pearl Ventures, which trades as Tuala Farm Fresh Eggs. It covers farm production, feed, water and medicine, egg collection, van dispatch, outlet stock and sales, money, reports, reminders and the weekly email digest. Real staff use it every day, so treat every change as a production change.
+A live production web app (installable on phones) for Desert Pearl Ventures, which trades as Tuala Farm Fresh Eggs. It covers farm production, feed, water and medicine, egg collection, van dispatch, outlet stock and sales, money, reports and reminders. Real staff use it every day, so treat every change as a production change.
 
 ## Where things live
 
@@ -11,8 +11,6 @@ A live production web app (installable on phones) for Desert Pearl Ventures, whi
 - **Gateway:** `api/gateway.ts`, a Vercel edge function. It holds the session in HttpOnly cookies, checks for CSRF via the `X-DPV` header, and only lets through RPC names on its allowlist.
 - **Database:** `supabase/migrations/`, numbered and applied in order. All writes go through SECURITY DEFINER `rpc_*` functions that start with `_require(...)`.
 - **Edge functions:** `supabase/functions/`, with shared code in `_shared/`.
-  - `weekly-digest`: the Monday email with its Excel attachment, plus the daily missing-entry emails.
-  - `digest-optout`: the one-click unsubscribe.
   - `staff-admin`: staff tools for the owner, and for the farm manager on every account except owners (no owner accounts, no making owners, not their own account); backups are owner only and no longer shown in the app.
   - `backup`, `push-notify`, `auth`.
 - **Older functions:** `pin-login` and `change-pin` are from the old PIN sign-in. Never bring PIN sign-in back.
@@ -50,7 +48,11 @@ Before you push, run `npm test` and `npm run build`. If you touch SQL, also run 
 
 ## How the reporting works
 
-- **`daily_checks()`** runs at 06:00 Nairobi time through pg_cron. It checks the previous day with `completeness()`, then posts reminders through `_notify_once` and, when the email secrets are set, sends emails.
+- **Notifications are reminders only** (since 3 Nov 2026). `reminders(slot)` runs through pg_cron and sends each reminder at most once a day, and only when there is something to do:
+  - 09:00 Nairobi (`morning`): sales points without an opening count; the van's start of day; the production clerk if the tank is not read; the inventory clerk only when stock is low or issues are unconfirmed.
+  - 19:00 (`evening`): sales points not yet closed; the van if eggs are still on board; the production clerk if eggs or water are missing.
+  - 21:00 (`close`): one day-close summary to the owner and farm manager.
+  - `_notify` and `_notify_once` drop everything that is not kind `reminder` or `day_close`, so no event alert is sent. Live alerts still show on the app's screens.
 - **`weekly_facts(from, to, role, loc)`** is the insight engine. It ranks missing entries first, then whether a fair comparison is possible, then anomalies measured against the farm's own settings. It keeps at most 5 points and scopes them by role:
   - `owner` sees everything.
   - `manager` sees farm operations, outlets and money.
@@ -58,7 +60,7 @@ Before you push, run `npm test` and `npm run build`. If you touch SQL, also run 
   - `store` (inventory clerk) gets no weekly insights yet.
   - `pos` sees its own outlet, with no cash.
 - **`rpc_weekly_report()`** feeds the Report screen. It covers the last 7 days to yesterday, for the owner and the farm manager only.
-- **The weekly digest** goes out Mondays at 06:30 Nairobi time (03:30 UTC), with a retry at 08:30. `digest_enqueue()` sends one call per recipient, and the `digest_log` and `nudge_log` tables stop anything sending twice.
+- **There is no email.** The weekly digest, the reminder emails and the opt-out link were repealed on 3 Nov 2026. The old `digest_log` and `nudge_log` tables are kept as history. Do not bring email back without the client asking.
 
 ## Business rules (from the client, 2 Nov 2026)
 
@@ -76,21 +78,12 @@ Before you push, run `npm test` and `npm run build`. If you touch SQL, also run 
 - **Skipped days:** the farm manager can enter feed used, water drunk, deaths and medicine for an earlier day, up to 62 days back (`rpc_farm_record_on`). The daily house sheet and shop sheet already take a date.
 - **Farm manager Setup tab:** houses, prices and thresholds (`rpc_save_settings`), staff other than owners, and the monthly workbooks. Opening balances and the security log stay with the owner.
 - **Monthly outlet workbooks (owner and farm manager):** Activity → Setup and the Report screen list one workbook per month. `rpc_month_book(month)` returns each outlet's day as entered; `src/lib/monthBook.ts` lays it out like the client's Daily Outlet Report template (yellow = entered, grey = formulas, values cached for phone previewers) and `src/lib/xlsx.ts` writes the file in the browser. The current month covers every day to yesterday, and today once an outlet has a closing count. This replaced the Backups card; the weekly JSON backup still runs on Sunday nights for disaster recovery.
-- **Inventory clerk (role `store`):** runs the farm store through `rpc_store(action, p)`: feed, medicine and other supplies (`supplies`, `supply_moves`), quantities only (the farm manager records payments). Feed and medicine are issued to a house with `need_confirm`; the production clerk confirms what arrived (`rpc_confirm_issue`, `issue_confirms`) and a shortfall notifies the owner, farm manager and store. The production clerk no longer records feed or medicine; the daily house sheet only takes feed from the farm manager.
+- **Inventory clerk (role `store`):** runs the farm store through `rpc_store(action, p)`: feed, medicine and other supplies (`supplies`, `supply_moves`), quantities only (the farm manager records payments). Feed and medicine are issued to a house with `need_confirm`; the production clerk confirms what arrived (`rpc_confirm_issue`, `issue_confirms`); a shortfall is on record in the activity log. The production clerk no longer records feed or medicine; the daily house sheet only takes feed from the farm manager.
 - **The van (location kind `van`) has no counts.** It loads (receives), delivers to the farm or outlets, sells, and must end the day empty (drop what is left with Deliver eggs). `completeness()` checks "eggs left on the van" instead of opening and closing counts. The driver banks or sends the cash.
 - **Lucky Summer was a test outlet:** its records and the 3 Nov test entries were removed (migration 15).
 
 ## Open items
 
-- **Email secrets:** add these in Supabase under Edge Functions → Secrets:
-  - `RESEND_API_KEY`
-  - `DIGEST_FROM` (an address on a domain verified in Resend)
-  - `DIGEST_REPLY_TO` (optional)
-  - `ANTHROPIC_API_KEY`
-  - `ANTHROPIC_MODEL`
-  - `DPV_APP_URL`
-- **Email domain:** verify a Desert Pearl domain in Resend, with SPF, DKIM and DMARC records.
-- **Staff emails:** add each person's address on the Settings → Staff screen.
 - **Tank size:** `settings.tank_capacity_l` is 1,000 L while the farm sheet showed about 3,500 L drunk per house a day. Confirm the real tank size, then record a fresh tank reading.
 - **Lay rates:** set a realistic expected lay rate for each house. Both are at 100% now, so every week reports a shortfall.
 - **Closed days:** outlets are set as closed on Sunday (`locations.closed_dow = '{7}'`). The client said they would confirm this.

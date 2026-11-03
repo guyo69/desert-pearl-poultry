@@ -23,7 +23,7 @@ export interface ScheduleItem { id: number; due: string; house: string; task: st
 export interface StaffLite { id: string; display_name: string; role: Role; location_id: string | null; active: boolean; username?: string; must_change_password?: boolean; mfa_enabled?: boolean; locked?: boolean }
 /** The owner's staff tool (staff-admin "list"). */
 export interface StaffAdminRow extends StaffLite { username: string; must_change_password: boolean; temp_expires_at: string | null; password_changed_at: string | null; mfa_enabled: boolean; mfa_required: boolean; locked_until: string | null; created_at: string;
-  /** owner only: the weekly digest and email nudges */
+  /** kept from the old email digest (repealed 3 Nov 2026); no longer shown */
   email: string | null; digest_enabled: boolean; digest_opted_out_at: string | null }
 export interface Me { id: string; display_name: string; role: Role; location_id: string | null; username: string; password_changed_at: string | null; mfa_enabled: boolean; mfa_required: boolean; backup_codes_left: number }
 

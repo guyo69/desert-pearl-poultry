@@ -209,7 +209,7 @@ export function Report({ D, version }: ViewProps) {
             <span style={{ width: 4, borderRadius: 2, background: sevVar(SEV[x.severity] ?? 'ok'), gridRow: 'span 2' }} />
             <b>{insightTitle(x)}</b><p>{x.text}</p></div>)
         : <p className="lead">Nothing needs attention this week.</p>}
-      <p className="muted" style={{ fontSize: 12.5, margin: '10px 0 0' }}>The same points go out in Monday's email. Figures cover days that were entered; missing days are listed first.</p></Card>
+      <p className="muted" style={{ fontSize: 12.5, margin: '10px 0 0' }}>Figures cover days that were entered; missing days are listed first.</p></Card>
     <Card title="Scorecard" aside={<span className="muted">{why}</span>}><div className="tblw"><table>
       <thead><tr><th>Measure</th><th>Last 7 days</th><th>Week before</th><th>Change</th></tr></thead>
       <tbody>{rows.map((r) => <tr key={r[0]}><td>{r[0]}</td><td><b>{r[1]}</b></td><td>{prev(r[2])}</td><td>{r[5] === null || !cmp ? <span className="muted">–</span> : <Delta a={r[3]} b={r[4]} invert={r[5]} pts={r[6]} />}</td></tr>)}</tbody></table></div></Card>

@@ -83,7 +83,7 @@ select t_err($$select rpc_dispatch_many('FARM', '[{"to":"LUCKY","n":30}]'::jsonb
 reset role;
 do $$ begin
   assert not _mfa_required('owner') and not _mfa_required('manager'), 'optional';
-  assert exists (select 1 from notifications where title = 'New medicine added: Amprolium 20%' and 'owner' = any (to_roles)), 'owner told about the new medicine';
+  assert not exists (select 1 from notifications where title = 'New medicine added: Amprolium 20%'), 'no event notifications since 3 Nov 2026';
   assert not has_function_privilege('anon', 'public.rpc_dispatch_many(text, jsonb, text)', 'execute'), 'anon blocked';
   assert not has_function_privilege('authenticated', 'public.rpc_save_medicine(bigint, text, text, numeric, boolean)', 'execute'), 'old editor retired';
 end $$;

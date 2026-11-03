@@ -59,7 +59,7 @@ select t_err($$select rpc_house_day(null, '[{"house":"Z","n":1}]'::jsonb)$$, 'Un
 reset role;
 do $$ begin
   -- feed use beyond the store book is recorded, with a red notice to fix the book
-  assert exists (select 1 from notifications where title = 'Feed store book is below zero'), 'negative feed book flagged';
+  assert not exists (select 1 from notifications where title = 'Feed store book is below zero'), 'no event notifications since 3 Nov 2026';
 end $$;
 set role authenticated;
 

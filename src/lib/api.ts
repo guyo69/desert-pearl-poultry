@@ -49,7 +49,7 @@ export const dataVersion = () => rpc<{ v: number; day: string }>('data_version')
 /** Owner and farm manager: what was not entered on the last tracked days (the same check as the morning reminders). */
 export interface Gap { day: string; label: string; scope: 'house' | 'farm' | 'outlet'; id: string; name: string; location_id: string; missing: string[] }
 export const loadGaps = (days = 14) => rpc<Gap[]>('gaps', { p_days: days });
-/** Owner and farm manager: the last 7 days to yesterday, from the same insight engine as the weekly email. */
+/** Owner and farm manager: the last 7 days to yesterday, from the weekly insight engine. */
 export interface WeeklyInsight { kind: string; severity: 'red' | 'orange' | 'amber' | 'ok' | string; where: string; role: string; action: string; text: string }
 export interface WeeklyReport {
   period: { from: string; to: string; label: string };

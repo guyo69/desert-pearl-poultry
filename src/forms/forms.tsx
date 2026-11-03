@@ -146,7 +146,7 @@ export function feedUseForm(D: Dashboard): FormSpec {
       const back = await farmOn(D, v, 'feed_use', { kg: kgOf(v), house: v.house, note: v.note });
       if (back) return `${back} ${n0(kgOf(v))} kg taken off the feed store.`;
       const r = await rpc<{ band_label: string; level: number; notified: boolean }>('rpc_feed', { p_kind: 'use', p_kg: kgOf(v), p_house: v.house, p_note: v.note });
-      return `Saved. Feed at ${pct(r.level, 0)} of the buffer (${r.band_label}).${r.notified ? ' Farm Manager notified.' : ''}`;
+      return `Saved. Feed at ${pct(r.level, 0)} of the buffer (${r.band_label}).`;
     },
   };
 }
@@ -207,7 +207,7 @@ export function tankForm(D: Dashboard): FormSpec {
     calc: (v) => { const b = band(v.l / cap); return <div><span>Level</span><b style={{ color: `var(${b.color})` }}>{pct(v.l / cap, 0)} · {b.label}</b></div>; },
     onSubmit: async (v) => {
       const r = await rpc<{ band_label: string; level: number; notified: boolean }>('rpc_water', { p_kind: 'tank', p_litres: v.l });
-      return `Tank at ${pct(r.level, 0)} (${r.band_label}).${r.notified ? ' Farm Manager notified.' : ''}`;
+      return `Tank at ${pct(r.level, 0)} (${r.band_label}).`;
     },
   };
 }
@@ -546,7 +546,7 @@ export function receiveForm(D: Dashboard, x: Transfer): FormSpec {
     onSubmit: async (v) => {
       const q = gradesOf(v);
       const res = await rpc<{ short: number; damaged: number; missing: number }>('rpc_receive_delivery', { p_transfer: x.id, p_n: q.n, p_b: q.b, p_j: q.j, p_c: q.c, p_dmg: v.dmg });
-      return res.short > 0 ? `Received: ${res.damaged} damaged, ${eggs(res.missing)} missing. Farm Manager notified.` : 'Delivery received. Stock updated.';
+      return res.short > 0 ? `Received: ${res.damaged} damaged, ${eggs(res.missing)} missing. The difference is on record.` : 'Delivery received. Stock updated.';
     },
   };
 }
@@ -884,7 +884,7 @@ export const scheduleForm = (D: Dashboard, e?: ScheduleItem): FormSpec => ({
 });
 
 const ROLE_OPTS: [string, string][] = [['pos', 'Sales point attendant / van driver'], ['clerk', 'Production clerk'], ['store', 'Inventory clerk'], ['manager', 'Farm manager'], ['owner', 'Owner']];
-export const staffForm = (D: Dashboard, s?: StaffLite & { email?: string | null; digest_enabled?: boolean; digest_opted_out_at?: string | null }): FormSpec => ({
+export const staffForm = (D: Dashboard, s?: StaffLite): FormSpec => ({
   title: s ? `Edit ${s.display_name}` : 'Add staff member',
   intro: !s ? <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>They sign in with this username and the temporary password <b>0000</b>. It works once, for 72 hours, and they must choose their own password straight away. Owners and farm managers also set up two-step sign-in.</p> : undefined,
   fields: [
@@ -893,18 +893,12 @@ export const staffForm = (D: Dashboard, s?: StaffLite & { email?: string | null;
     { type: 'select', id: 'role', label: 'Role', options: D.me.role === 'owner' ? ROLE_OPTS : ROLE_OPTS.filter(([r]) => r !== 'owner'), def: s?.role ?? 'pos' },
     { type: 'select', id: 'loc', label: 'Location', options: D.locations.map((l): [string, string] => [l.id, l.name]), def: s?.location_id ?? 'FARM' },
     ...(s ? [{ type: 'select', id: 'active', label: 'Access', options: [['true', 'Active'], ['false', 'Disabled']], def: String(s.active) } as Field] : []),
-    { type: 'text', id: 'email', label: 'Email (optional, for the weekly digest)', def: s?.email ?? '', placeholder: 'name@example.com' },
-    { type: 'select', id: 'digest', label: 'Weekly digest and reminder emails', options: [['true', 'On'], ['false', 'Off']], def: String(s?.digest_enabled ?? true) },
-    ...(s?.digest_opted_out_at && !s.digest_enabled ? [{ type: 'note', text: <div><span>They turned the emails off from the link in an email. Only switch them back on if they ask.</span></div> } as Field] : []),
   ],
   onSubmit: async (v) => {
     const username = String(v.username ?? '').trim().toLowerCase();
     if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(username)) throw new Error('Username: 3 to 32 lowercase letters, numbers, dots or dashes.');
-    const email = String(v.email ?? '').trim().toLowerCase();
-    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('That email address does not look right.');
-    const mail = { email, digest_enabled: v.digest === 'true' };
-    if (s) await staffAdmin({ action: 'update', staff_id: s.id, username, display_name: v.name, role: v.role, location_id: v.role === 'owner' ? null : v.loc, active: v.active === 'true', ...mail });
-    else await staffAdmin({ action: 'create', username, display_name: v.name, role: v.role, location_id: v.role === 'owner' ? null : v.loc, ...mail });
+    if (s) await staffAdmin({ action: 'update', staff_id: s.id, username, display_name: v.name, role: v.role, location_id: v.role === 'owner' ? null : v.loc, active: v.active === 'true' });
+    else await staffAdmin({ action: 'create', username, display_name: v.name, role: v.role, location_id: v.role === 'owner' ? null : v.loc });
     return s ? (v.active === 'false' && s.active ? `${v.name} is disabled and signed out.` : 'Staff member updated.') : `${v.name} added. Username ${username}, temporary password 0000 (valid 72 hours).`;
   },
 });

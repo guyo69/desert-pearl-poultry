@@ -55,7 +55,9 @@ select t_err($$select rpc_store('feed_in', '{"bags": 1}')$$, 'not available');  
 -- ---------- 3. the van: no counts, empty at day end ----------
 reset role;
 do $$ declare c jsonb; v jsonb; begin
-  assert exists (select 1 from notifications where title like 'House B received 280 doses of 300 doses%'), 'shortfall flagged to the manager and the store';
+  -- since 3 Nov 2026 only reminders are sent: the shortfall shows in the activity log and the confirmation, not as a notification
+  assert not exists (select 1 from notifications where title like 'House B received 280 doses%'), 'no event notifications';
+  assert exists (select 1 from issue_confirms where received = 280 and issued = 300), 'the shortfall is on record';
   assert (select kind from locations where id = 'VAN') = 'van', 'the van is a van';
   c := completeness(biz_today());
   select i into v from jsonb_array_elements(c->'items') i where i->>'id' = 'VAN';
