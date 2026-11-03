@@ -36,6 +36,8 @@ export const LOC_COLORS: Record<string, string> = { FARM: '--l-farm', VAN: '--l-
 export const locColor = (id: string) => LOC_COLORS[id] ?? '--muted';
 /** The owner views and sets up; staff enter the day's records. The database enforces the same rule. */
 export const canEnter = (D: Dashboard) => D.me.role !== 'owner';
+/** The mobile van: no opening or closing counts, ends each day empty. */
+export const isVan = (D: Dashboard, loc: string | null | undefined) => D.locations.find((l) => l.id === loc)?.kind === 'van';
 /** ISO weekday of a YYYY-MM-DD date: 1 = Monday … 7 = Sunday. */
 export const isoDow = (d: string) => new Date(`${d}T00:00:00Z`).getUTCDay() || 7;
 /** A sales point's regular closing day (Sunday unless changed in the database). */
@@ -183,7 +185,7 @@ export function alerts(D: Dashboard): Alert[] {
   const farmReady = D.houses.some((h) => h.birds_at_start > 0);
   // feed
   const f = feedInfo(D);
-  if (farmReady && f.level < 1) A.push({ sev: bandSev(f.band), icon: 'sack', to: ['owner', 'manager', 'clerk'],
+  if (farmReady && f.level < 1) A.push({ sev: bandSev(f.band), icon: 'sack', to: ['owner', 'manager', 'clerk', 'store'],
     title: `Feed buffer: ${f.band.label} (${pct(f.level, 0)})`,
     body: `${n0(f.stockBags)} bags in store against a ${n0(f.targetBags)}-bag weekly buffer. About ${f.cover.toFixed(1)} days left. Order ${f.bags} bag${f.bags === 1 ? '' : 's'}.` });
   // water tank
@@ -207,8 +209,14 @@ export function alerts(D: Dashboard): Alert[] {
       title: `${h.name} lay rate down ${((r7 - r3) * 100).toFixed(1)} pts`, body: `Last 3 days ${pct(r3)} against ${pct(r7)} the week before. Check water, feed intake and signs of disease.` });
   }
   // medicines and schedule
-  for (const m of D.medicines.filter((x) => x.active && x.stock <= x.reorder)) A.push({ sev: m.stock <= m.reorder / 2 ? 'orange' : 'amber', icon: 'syringe', to: ['owner', 'manager', 'clerk'],
+  for (const m of D.medicines.filter((x) => x.active && x.stock <= x.reorder)) A.push({ sev: m.stock <= m.reorder / 2 ? 'orange' : 'amber', icon: 'syringe', to: ['owner', 'manager', 'store'],
     title: `${m.name} low`, body: `${n0(m.stock)} ${m.unit} left. Reorder level is ${n0(m.reorder)} ${m.unit}.` });
+  for (const x of (D.supplies ?? []).filter((v) => v.active && v.stock <= v.reorder)) A.push({ sev: 'amber', icon: 'box', to: ['owner', 'manager', 'store'],
+    title: `${x.name} low`, body: `${n0(x.stock)} ${x.unit} left. Reorder level is ${n0(x.reorder)} ${x.unit}.` });
+  // store issues waiting for the production clerk
+  const pend = D.store_pending ?? [];
+  if (pend.length) A.push({ sev: pend.some((x) => x.d < D.today) ? 'amber' : 'info', icon: 'check', to: ['clerk', 'manager'],
+    title: `${pend.length} store issue${pend.length === 1 ? '' : 's'} to confirm`, body: 'Confirm what each house received from the store, so any shortfall shows straight away.' });
   for (const e of D.schedule.filter((x) => !x.done)) {
     const n = daysBetween(D.today, e.due);
     if (n < 0) A.push({ sev: 'amber', icon: 'clock', to: ['manager', 'clerk'], title: `Overdue: ${e.task}`, body: `${e.house}, was due ${dlabel(e.due)}. Mark it done when finished.` });
@@ -218,7 +226,7 @@ export function alerts(D: Dashboard): Alert[] {
   for (const x of D.transit) A.push({ sev: 'info', icon: 'truck', loc: x.to_loc, to: ['owner', 'manager', 'pos'],
     title: `Delivery to ${locShort(D, x.to_loc)} not yet confirmed`, body: `${eggs(x.sent_n + (x.sent_b ?? 0) + x.sent_c + x.sent_j)} sent from ${locShort(D, x.from_loc)} on ${dlabel(x.d)}.` });
   if (s.go_live) for (const l of D.locations) {
-    if (!closedToday(D, l) && !D.counts_today.some((c) => c.location_id === l.id && c.kind === 'open')) A.push({ sev: 'amber', icon: 'count', loc: l.id, to: ['owner', 'manager', 'pos'],
+    if (l.kind !== 'van' && !closedToday(D, l) && !D.counts_today.some((c) => c.location_id === l.id && c.kind === 'open')) A.push({ sev: 'amber', icon: 'count', loc: l.id, to: ['owner', 'manager', 'pos'],
       title: `${l.name}: opening count not done`, body: 'Count the eggs on hand before selling.' });
   }
   // money

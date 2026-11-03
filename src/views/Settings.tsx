@@ -14,7 +14,7 @@ import { RecordList } from './common';
 import { MonthBooks } from './MonthBooks';
 import type { ViewProps } from './Management';
 
-const ROLE: Record<string, string> = { owner: 'Owner', manager: 'Farm Manager', clerk: 'Production Clerk', pos: 'Sales point' };
+const ROLE: Record<string, string> = { owner: 'Owner', manager: 'Farm Manager', clerk: 'Production Clerk', store: 'Inventory Clerk', pos: 'Sales point' };
 const when = (iso: string | null) => (iso ? `${dlabel(iso.slice(0, 10))} ${timeOf(iso)}` : '');
 
 /** Asks for a current authenticator code, then runs an action that needs it. */

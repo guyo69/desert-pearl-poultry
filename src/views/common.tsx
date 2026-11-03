@@ -14,7 +14,7 @@ const META: Record<ActivityRow['kind'], { icon: string; col: string }> = {
   med: { icon: 'syringe', col: '--l-rayan' }, mort: { icon: 'bird', col: '--muted' }, xfer: { icon: 'truck', col: '--l-tuala' },
   sale: { icon: 'receipt', col: '--l-farm' }, brk: { icon: 'crack', col: '--f-none' }, count: { icon: 'count', col: '--l-rayan' },
   money: { icon: 'swap', col: '--l-lucky' }, cash: { icon: 'cash', col: '--l-lucky' }, issue: { icon: 'truck', col: '--l-lucky' },
-  credit: { icon: 'wallet', col: '--l-farm' },
+  credit: { icon: 'wallet', col: '--l-farm' }, supply: { icon: 'box', col: '--l-tuala' }, confirm: { icon: 'check', col: '--f-full' },
 };
 const PAID_BY: Record<string, string> = { cash: 'Cash', till: 'M-Pesa Till', paybill: 'M-Pesa Paybill' };
 const q = (x: any, p = '') => ({ n: +x[`${p}n`] || 0, b: +x[`${p}b`] || 0, c: +x[`${p}c`] || 0, j: +x[`${p}j`] || 0 });
@@ -26,7 +26,7 @@ export function describe(D: Dashboard, r: ActivityRow): { title: string; sub: st
     case 'collect': return { title: `${house(x.house_id)} collection`, sub: `${mix(q(x))}${+x.dmg ? ` · ${x.dmg} damaged` : ''}`, end: eggs(t4(q(x)) + (+x.dmg || 0)) };
     case 'mort': return { title: `Mortality · ${house(x.house_id)}`, sub: x.cause, end: `${x.birds} bird${x.birds > 1 ? 's' : ''}` };
     case 'feed': return x.kind === 'in' ? { title: `Feed received${x.bags ? ` · ${x.bags} bags` : ''}`, sub: x.cost ? kes(x.cost) : '', end: `+${n0(x.kg)} kg` }
-      : x.kind === 'use' ? { title: `Feed used · ${x.note ?? ''}`, sub: x.house ?? '', end: `−${n0(x.kg)} kg` }
+      : x.kind === 'use' ? { title: x.need_confirm ? `Feed issued to ${x.house}` : `Feed used · ${x.note ?? ''}`, sub: x.need_confirm ? `From the store · ${x.note ?? ''}` : x.house ?? '', end: `−${n0(x.kg)} kg` }
       : { title: 'Feed store adjusted', sub: x.note ?? '', end: `${x.kg > 0 ? '+' : ''}${n0(x.kg)} kg` };
     case 'water': return x.kind === 'tank' ? { title: 'Tank level reading', sub: x.note ?? '', end: `${n0(x.litres)} L` }
       : { title: `Water drunk · ${house(x.house_id)}`, sub: x.note ?? '', end: `${n0(x.litres)} L` };
@@ -43,6 +43,11 @@ export function describe(D: Dashboard, r: ActivityRow): { title: string; sub: st
       : { title: x.kind === 'opening' ? 'Opening balance' : 'Cash count variance', sub: accName(D, x.to_acc), end: kes(+x.amount) };
     case 'cash': return { title: `Cash count · ${locShort(D, x.location_id)}`, sub: `Expected ${kes(+x.expected)}`, end: +x.diff ? kes(+x.diff) : 'Matched' };
     case 'credit': return { title: `Credit paid · ${x.customer}`, sub: `${locShort(D, x.location_id)} · ${PAID_BY[x.method] ?? x.method}${x.note ? ` · ${x.note}` : ''}`, end: kes(+x.amount) };
+    case 'supply': return x.kind === 'in' ? { title: `${x.item} received`, sub: x.note ?? 'Into the store', end: `+${n0(+x.qty)} ${x.unit}` }
+      : { title: `${x.item} issued`, sub: `${x.purpose ?? ''}${x.note ? ` · ${x.note}` : ''}`, end: `−${n0(+x.qty)} ${x.unit}` };
+    case 'confirm': return { title: `${x.house ?? 'House'} received ${x.what === 'feed' ? 'feed' : x.what ?? ''}`,
+      sub: +x.received < +x.issued ? `${n0(+x.issued - +x.received)} ${x.unit ?? ''} short of what the store issued${x.note ? ` · ${x.note}` : ''}` : 'All of it arrived',
+      end: `${n0(+x.received)} of ${n0(+x.issued)} ${x.unit ?? ''}` };
     default: return { title: 'Record', sub: '', end: '' };
   }
 }

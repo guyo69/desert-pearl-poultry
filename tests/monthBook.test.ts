@@ -69,3 +69,14 @@ if (process.env.DPV_WRITE_SAMPLE) {
   const fs = await import('node:fs');
   fs.writeFileSync(process.env.DPV_WRITE_SAMPLE, buildMonthBook(book).bytes);
 }
+
+describe('the van in the monthly workbook', () => {
+  it('has no counts and says what was left on board', () => {
+    const r: BookRow = { ...z, loc: 'VAN', d: '2026-10-02', book_open: 0, recv_xfer: 900, sold: 600, sent: 240, sales: 3, value: 9600, list_value: 9600, cash: 9600, e_cash: 600 };
+    const l = dayLine(r, '2026-11-03', 30, true);
+    expect(l.state).toBe('filled');
+    expect(l.closing).toBeNull();
+    expect(l.notes.join()).toMatch(/60 eggs still on board/);
+    expect(dayLine({ ...r, sent: 300 }, '2026-11-03', 30, true).notes.join()).toMatch(/ended the day empty/);
+  });
+});

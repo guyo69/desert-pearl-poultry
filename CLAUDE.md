@@ -55,6 +55,7 @@ Before you push, run `npm test` and `npm run build`. If you touch SQL, also run 
   - `owner` sees everything.
   - `manager` sees farm operations, outlets and money.
   - `clerk` sees the farm only.
+  - `store` (inventory clerk) gets no weekly insights yet.
   - `pos` sees its own outlet, with no cash.
 - **`rpc_weekly_report()`** feeds the Report screen. It covers the last 7 days to yesterday, for the owner and the farm manager only.
 - **The weekly digest** goes out Mondays at 06:30 Nairobi time (03:30 UTC), with a retry at 08:30. `digest_enqueue()` sends one call per recipient, and the `digest_log` and `nudge_log` tables stop anything sending twice.
@@ -75,6 +76,8 @@ Before you push, run `npm test` and `npm run build`. If you touch SQL, also run 
 - **Skipped days:** the farm manager can enter feed used, water drunk, deaths and medicine for an earlier day, up to 62 days back (`rpc_farm_record_on`). The daily house sheet and shop sheet already take a date.
 - **Farm manager Setup tab:** houses, prices and thresholds (`rpc_save_settings`), staff other than owners, and the monthly workbooks. Opening balances and the security log stay with the owner.
 - **Monthly outlet workbooks (owner and farm manager):** Activity → Setup and the Report screen list one workbook per month. `rpc_month_book(month)` returns each outlet's day as entered; `src/lib/monthBook.ts` lays it out like the client's Daily Outlet Report template (yellow = entered, grey = formulas, values cached for phone previewers) and `src/lib/xlsx.ts` writes the file in the browser. The current month covers every day to yesterday, and today once an outlet has a closing count. This replaced the Backups card; the weekly JSON backup still runs on Sunday nights for disaster recovery.
+- **Inventory clerk (role `store`):** runs the farm store through `rpc_store(action, p)`: feed, medicine and other supplies (`supplies`, `supply_moves`), quantities only (the farm manager records payments). Feed and medicine are issued to a house with `need_confirm`; the production clerk confirms what arrived (`rpc_confirm_issue`, `issue_confirms`) and a shortfall notifies the owner, farm manager and store. The production clerk no longer records feed or medicine; the daily house sheet only takes feed from the farm manager.
+- **The van (location kind `van`) has no counts.** It loads (receives), delivers to the farm or outlets, sells, and must end the day empty (drop what is left with Deliver eggs). `completeness()` checks "eggs left on the van" instead of opening and closing counts. The driver banks or sends the cash.
 - **Lucky Summer was a test outlet:** its records and the 3 Nov test entries were removed (migration 15).
 
 ## Open items

@@ -4,8 +4,10 @@ import { rpc } from '../lib/api';
 import { addDays, daysBetween, dlabel, eggs, n0, pct, range } from '../lib/format';
 import { canEnter, collected, damagedAtFarm, deaths, hensNow, houseAge, layRate, mix, produced, stockNow, tankInfo, waterFeedRatio, waterOn, waterTrend } from '../lib/metrics';
 import {
-  collectForm, dispatchForm, feedInForm, feedUseForm, houseDayForm, medForm, medicineForm, mortForm, scheduleForm, tankForm, waterIntakeForm,
+  collectForm, confirmIssueForm, dispatchForm, feedInForm, feedUseForm, houseDayForm, medForm, medicineForm, mortForm, scheduleForm, storeFeedInForm, storeFeedIssueForm,
+  storeMedInForm, storeMedIssueForm, tankForm, waterIntakeForm,
 } from '../forms/forms';
+import type { Dashboard } from '../lib/types';
 import { Icon } from '../ui/icons';
 import { useUI } from '../ui/ui';
 import { Card, Delta, Empty, FeedCard, Seg, TankCard, Tile } from '../ui/widgets';
@@ -19,18 +21,15 @@ export function ClerkHome({ D, version, go }: ViewProps) {
   if (!D.houses.some((h) => h.birds_at_start > 0)) return <div className="banner warn"><div><b>No hens set up yet</b><p>The owner or farm manager needs to enter each house's hen count under Settings → Houses.</p></div></div>;
   return <>
     <ClerkSteps D={D} />
-    <FeedCard D={D} actions={<><button className="btn sm" onClick={() => ui.openForm(feedUseForm(D))}><Icon name="scoop" />Feed used</button>
-      <button className="btn sm alt" onClick={() => ui.openForm(feedInForm(D))}><Icon name="sack" />Feed received</button></>} />
+    <StorePending D={D} />
+    <FeedCard D={D} />
     <div className="tiles">
       <Tile icon="egg" label="Egg collection" color="--l-van" onClick={() => ui.openForm(collectForm(D))} />
       <Tile icon="list" label="Daily house sheet" color="--l-rayan" onClick={() => ui.openForm(houseDayForm(D))} />
-      <Tile icon="scoop" label="Feed used" color="--f-low" onClick={() => ui.openForm(feedUseForm(D))} />
       <Tile icon="drop" label="Water drunk" color="--info" onClick={() => ui.openForm(waterIntakeForm(D))} />
       <Tile icon="tank" label="Tank level" color="--l-tuala" onClick={() => ui.openForm(tankForm(D))} />
-      <Tile icon="syringe" label="Medicine & vaccines" color="--l-rayan" onClick={() => ui.openForm(medForm(D))} />
       <Tile icon="bird" label="Mortality" color="--muted" onClick={() => ui.openForm(mortForm(D))} />
       <Tile icon="truck" label="Issue eggs" color="--l-farm" onClick={() => ui.openForm(dispatchForm(D, 'FARM'))} />
-      <Tile icon="sack" label="Feed received" color="--l-lucky" onClick={() => ui.openForm(feedInForm(D))} />
     </div>
     <div className="grid2">
       <Card title="Today by house" aside={<span className="muted">{dlabel(D.today)}</span>}><div className="list">{D.houses.map((h, i) => {
@@ -51,11 +50,38 @@ export function ClerkHome({ D, version, go }: ViewProps) {
   </>;
 }
 
+/**
+ * Feed and medicine waiting for the production clerk: the store issued them
+ * to a house, and the clerk confirms what arrived. The store and the farm
+ * manager see the same list, so they know what is outstanding.
+ */
+export function StorePending({ D }: { D: Dashboard }) {
+  const ui = useUI(), list = D.store_pending ?? [];
+  if (!list.length) return null;
+  const can = D.me.role === 'clerk' || D.me.role === 'manager';
+  return <Card title={D.me.role === 'clerk' ? 'Confirm what the store issued' : 'Waiting for the production clerk'} aside={<span className="chip sev-info">{list.length}</span>}>
+    <div className="list">{list.map((x) => <div className="li" key={`${x.kind}${x.id}`}>
+      <span className="av" style={{ background: `var(${x.kind === 'feed' ? '--f-low' : '--l-rayan'})` }}><Icon name={x.kind === 'feed' ? 'sack' : 'syringe'} /></span>
+      <div className="mid"><b>{x.kind === 'feed' ? 'Feed' : x.what} for {x.house}</b><small>{n0(x.qty)} {x.unit} issued {x.d === D.today ? 'today' : dlabel(x.d)}{x.by_name ? ` by ${x.by_name}` : ''}</small></div>
+      {can && <div className="end"><button className="act" onClick={() => ui.openForm(confirmIssueForm(D, x))}>Confirm</button></div>}</div>)}</div>
+  </Card>;
+}
+
+/** Feed buttons by role: the store receives and issues; the farm manager can also record use directly. */
+function feedActions(D: Dashboard, ui: ReturnType<typeof useUI>) {
+  if (D.me.role === 'store') return <><button className="btn sm" onClick={() => ui.openForm(storeFeedIssueForm(D))}><Icon name="scoop" />Issue to a house</button>
+    <button className="btn sm alt" onClick={() => ui.openForm(storeFeedInForm(D))}><Icon name="sack" />Feed received</button></>;
+  if (D.me.role === 'manager') return <><button className="btn sm" onClick={() => ui.openForm(storeFeedIssueForm(D))}><Icon name="scoop" />Issue to a house</button>
+    <button className="btn sm alt" onClick={() => ui.openForm(feedInForm(D))}><Icon name="sack" />Feed received</button>
+    <button className="btn sm alt" onClick={() => ui.openForm(feedUseForm(D))}><Icon name="list" />Feed used (no confirm)</button></>;
+  return undefined;
+}
+
 export function Feed({ D, version }: ViewProps) {
   const ui = useUI();
   return <>
-    <FeedCard D={D} actions={canEnter(D) ? <><button className="btn sm" onClick={() => ui.openForm(feedUseForm(D))}><Icon name="scoop" />Feed used</button>
-      <button className="btn sm alt" onClick={() => ui.openForm(feedInForm(D))}><Icon name="sack" />Feed received</button></> : undefined} />
+    <StorePending D={D} />
+    <FeedCard D={D} actions={feedActions(D, ui)} />
     <Card title="Feed in store" aside={<span className="muted">shaded by buffer band</span>}><FeedStockChart D={D} /></Card>
     <Card title="Daily use vs plan"><FeedUseChart D={D} /></Card>
     <Card title="Feed records"><RecordList D={D} version={version} kinds={['feed']} canVoid={false} limit={20} /></Card>
@@ -108,23 +134,24 @@ export function Health({ D }: ViewProps) {
   </>;
 }
 
-const REC_KINDS: [string, string][] = [['all', 'All'], ['collect', 'Eggs'], ['feed', 'Feed'], ['water', 'Water'], ['med', 'Medicine'], ['mort', 'Mortality'], ['xfer', 'Sent']];
+const REC_KINDS: [string, string][] = [['all', 'All'], ['collect', 'Eggs'], ['feed', 'Feed'], ['water', 'Water'], ['med', 'Medicine'], ['confirm', 'From the store'], ['mort', 'Mortality'], ['xfer', 'Sent']];
 export function Records({ D, version }: ViewProps) {
   const [k, setK] = useState('all');
   return <Card title="Farm records" aside={<Seg value={k} options={REC_KINDS} onChange={setK} />}>
-    <RecordList D={D} version={version} loc={k === 'all' || k === 'xfer' ? 'FARM' : null} kinds={k === 'all' ? ['collect', 'feed', 'water', 'med', 'mort', 'xfer'] : [k]}
+    <RecordList D={D} version={version} loc={k === 'all' || k === 'xfer' ? 'FARM' : null} kinds={k === 'all' ? ['collect', 'feed', 'water', 'med', 'confirm', 'mort', 'xfer'] : [k]}
       canVoid={false} limit={k === 'all' ? 60 : 30} /></Card>;
 }
 
-function MedicineStore({ D, mgmt }: { D: ViewProps['D']; mgmt: boolean }) {
+export function MedicineStore({ D, mgmt }: { D: ViewProps['D']; mgmt: boolean }) {
   const ui = useUI();
   const [showOld, setShowOld] = useState(false);
   const list = D.medicines.filter((m) => m.active || showOld);
   const retired = D.medicines.filter((m) => !m.active).length;
   const groups = [...new Set(list.map((m) => m.category))].sort((a, b) => a.localeCompare(b));
   return <Card title="Medicine & vaccine store" aside={<div className="row-btns">
-      {canEnter(D) && <button className="lnk" onClick={() => ui.openForm(medForm(D))}>Record use or delivery</button>}
-      {canEnter(D) && <button className="lnk" onClick={() => ui.openForm(medForm(D, { startNew: true }))}>New item received</button>}
+      {(D.me.role === 'store' || D.me.role === 'manager') && <button className="lnk" onClick={() => ui.openForm(storeMedIssueForm(D))}>Issue to a house</button>}
+      {(D.me.role === 'store' || D.me.role === 'manager') && <button className="lnk" onClick={() => ui.openForm(storeMedInForm(D))}>Received</button>}
+      {D.me.role === 'manager' && <button className="lnk" onClick={() => ui.openForm(medForm(D))}>Use (no confirm)</button>}
       {mgmt && <button className="lnk" onClick={() => ui.openForm(medicineForm(D))}>Add item</button>}</div>}>
     {list.length ? groups.map((g) => <div key={g} className="medgroup">
       <h4>{g}</h4>
@@ -134,7 +161,7 @@ function MedicineStore({ D, mgmt }: { D: ViewProps['D']; mgmt: boolean }) {
           <div className="mid"><b>{m.name}</b>{m.active && <div className="splitbar" style={{ margin: '6px 0 2px', height: 6 }}><span style={{ width: `${lvl * 100}%`, background: `var(${low ? '--f-low' : '--f-full'})` }} /></div>}
             <small>{m.active ? `Reorder at ${n0(m.reorder)} ${m.unit}` : 'Not in use'}</small></div>
           <div className="end">{n0(m.stock)} {m.unit}{low && <small style={{ color: 'var(--f-low)' }}>Low</small>}{mgmt && <div><button className="act" onClick={() => ui.openForm(medicineForm(D, m))}>Edit</button></div>}</div></div>; })}</div>
-    </div>) : <Empty>No medicines yet. Use "New item received" when the first delivery arrives.</Empty>}
+    </div>) : <Empty>No medicines yet. The inventory clerk adds each item when its first delivery arrives.</Empty>}
     {mgmt && retired > 0 && <button className="lnk" style={{ marginTop: 8 }} onClick={() => setShowOld(!showOld)}>{showOld ? 'Hide items not in use' : `Show ${retired} item${retired === 1 ? '' : 's'} not in use`}</button>}
   </Card>;
 }

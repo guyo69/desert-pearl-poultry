@@ -33,6 +33,8 @@ export function MonthBooks({ D }: { D: Dashboard }) {
     setBusy(m);
     try {
       const [book, mod] = await Promise.all([rpc<MonthBook>('rpc_month_book', { p_month: m }), import('../lib/monthBook')]);
+      // the van has no counts; its tab says what was left on board instead
+      book.locations = book.locations.map((l) => ({ ...l, kind: D.locations.find((x) => x.id === l.id)?.kind }));
       const { bytes, filename } = mod.buildMonthBook(book);
       const url = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
       const a = document.createElement('a');

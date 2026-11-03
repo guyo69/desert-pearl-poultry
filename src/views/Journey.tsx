@@ -2,11 +2,11 @@
 // Steps are worked out from the dashboard; gaps come from the server's completeness check.
 import { type ReactNode, useEffect, useState } from 'react';
 import { type Gap, loadGaps } from '../lib/api';
-import { dlabel, dshort, eggs } from '../lib/format';
-import { canEnter, closedToday, feedUsed, locName, produced, salesOn, tankInfo, waterOn } from '../lib/metrics';
+import { dlabel, dshort, eggs, kes } from '../lib/format';
+import { balance, canEnter, closedToday, feedUsed, isVan, locName, mix, produced, salesOn, stockNow, tankInfo, tot, waterOn } from '../lib/metrics';
 import type { Dashboard } from '../lib/types';
 import {
-  collectForm, countForm, dispatchForm, feedUseForm, houseDayForm, mortForm, receiveForm, saleForm, shopDayForm, tankForm, waterIntakeForm,
+  collectForm, confirmIssueForm, countForm, dispatchForm, houseDayForm, moveForm, mortForm, receiveForm, saleForm, shopDayForm, tankForm, waterIntakeForm,
 } from '../forms/forms';
 import { Icon } from '../ui/icons';
 import { useUI } from '../ui/ui';
@@ -34,9 +34,11 @@ export function ClerkSteps({ D }: { D: Dashboard }) {
   const tank = tankInfo(D), feed = feedUsed(D, [t]);
   const noWater = D.houses.filter((h) => !waterOn(D, [t], h.id)), noEggs = D.houses.filter((h) => !produced(D, [t], h.id));
   const sent = has(D, 'FARM', t, 'out');
+  const pendFeed = (D.store_pending ?? []).filter((x) => x.kind === 'feed');
   const steps: Step[] = [
     { label: 'Read the water tank', detail: tank && D.tank?.d === t ? `Read today: ${Math.round(tank.level * 100)}%` : 'First thing: how full is the tank?', done: D.tank?.d === t, go: () => ui.openForm(tankForm(D)), act: 'Read' },
-    { label: 'Feed the birds', detail: feed > 0 ? `${(feed / D.settings.bag_kg).toFixed(1)} bags recorded today` : 'Record the bags given at each feeding', done: feed > 0, go: () => ui.openForm(feedUseForm(D)) },
+    { label: 'Feed from the store', detail: pendFeed.length ? `${pendFeed.length} issue${pendFeed.length === 1 ? '' : 's'} to confirm: check what reached each house` : feed > 0 ? `${(feed / D.settings.bag_kg).toFixed(1)} bags issued today, all confirmed` : 'The inventory clerk issues feed to each house; confirm what arrives',
+      done: feed > 0 && !pendFeed.length, go: pendFeed[0] ? () => ui.openForm(confirmIssueForm(D, pendFeed[0])) : undefined, act: 'Confirm' },
     { label: 'Water drunk', detail: noWater.length ? `Still to record: ${noWater.map((h) => h.name).join(', ')}` : 'Every house recorded', done: !noWater.length, go: () => ui.openForm(waterIntakeForm(D)) },
     { label: 'Collect and grade the eggs', detail: noEggs.length ? `Still to collect: ${noEggs.map((h) => h.name).join(', ')}. Normal, jumbo, cracked, damaged.` : `${eggs(produced(D, [t]))} collected today`, done: !noEggs.length, go: () => ui.openForm(collectForm(D)) },
     { label: 'Deaths', detail: 'Record any birds that died, by house', done: D.farm_daily.some((r) => r.d === t && r.deaths > 0), optional: true, go: () => ui.openForm(mortForm(D)), act: 'Record' },
@@ -47,6 +49,36 @@ export function ClerkSteps({ D }: { D: Dashboard }) {
 
 /** Shops, van and farm counter: open, receive, sell, issue / damaged, close. */
 export function ShopSteps({ D, loc }: { D: Dashboard; loc: string }) {
+  if (isVan(D, loc)) return <VanSteps D={D} loc={loc} />;
+  return <OutletSteps D={D} loc={loc} />;
+}
+
+/**
+ * The mobile van: no opening or closing count. It loads, delivers, sells on
+ * the road, and ends the day empty by dropping what is left at the farm or an
+ * outlet. The driver banks or sends the cash.
+ */
+export function VanSteps({ D, loc }: { D: Dashboard; loc: string }) {
+  const ui = useUI(), t = D.today;
+  const waiting = D.transit.filter((x) => x.to_loc === loc), s = salesOn(D, [t], loc);
+  const onBoard = stockNow(D, loc), left = Math.max(0, tot(onBoard));
+  const moved = D.stock_daily.some((r) => r.location_id === loc && r.d === t);
+  const cash = balance(D, `CASH:${loc}`);
+  const steps: Step[] = [
+    { label: 'Load: receive deliveries', detail: waiting.length ? `${waiting.length} waiting: count what you load and any damaged` : has(D, loc, t, 'recv') ? 'Loaded today' : 'Nothing waiting for the van',
+      done: !waiting.length, go: waiting[0] ? () => ui.openForm(receiveForm(D, waiting[0])) : undefined, act: 'Receive' },
+    { label: 'Deliver to the farm or outlets', detail: has(D, loc, t, 'out') ? 'Delivered today. Each place confirms on arrival.' : 'Choose where, enter the eggs, repeat for the next stop',
+      done: has(D, loc, t, 'out'), optional: true, go: () => ui.openForm(dispatchForm(D, loc)), act: 'Deliver' },
+    { label: 'Sell on the road', detail: s.cnt ? `${s.cnt} sale${s.cnt === 1 ? '' : 's'} · ${eggs(s.pcs)}` : 'Record each sale as it happens', done: s.cnt > 0, optional: true, go: () => ui.openForm(saleForm(D, loc)), act: s.cnt ? 'New sale' : 'Record' },
+    { label: 'End the day empty', detail: left ? `${mix(onBoard)} still on board: drop it at the farm or an outlet` : moved ? 'Nothing left on the van' : 'Nothing on board',
+      done: !left, go: left ? () => ui.openForm(dispatchForm(D, loc, { leftover: true })) : undefined, act: 'Drop off' },
+    { label: 'Bank or send the cash', detail: cash > 0 ? `${kes(cash)} with the driver` : 'No cash with the driver',
+      done: cash <= 0, optional: cash <= 0, go: () => ui.openForm(moveForm(D, loc)), act: 'Move money' },
+  ];
+  return <Steps title="Today on the van" steps={steps} />;
+}
+
+function OutletSteps({ D, loc }: { D: Dashboard; loc: string }) {
   const ui = useUI(), t = D.today;
   const opened = D.counts_today.some((c) => c.location_id === loc && c.kind === 'open');
   const closed = D.counts_today.some((c) => c.location_id === loc && c.kind === 'close');
@@ -92,7 +124,7 @@ export function MissingDays({ D, gaps }: { D: Dashboard; gaps: Gap[] | null }) {
   const [all, setAll] = useState(false);
   if (!gaps?.length) return null;
   const shown = all ? gaps : gaps.slice(0, 5);
-  const open = (g: Gap) => ui.openForm(g.scope === 'outlet' ? shopDayForm(D, g.id, g.day) : houseDayForm(D, g.day));
+  const open = (g: Gap) => ui.openForm(g.scope === 'outlet' ? (isVan(D, g.id) ? dispatchForm(D, g.id, { leftover: true }) : shopDayForm(D, g.id, g.day)) : houseDayForm(D, g.day));
   return <Card title="Days with gaps" aside={<span className="chip sev-amber">{gaps.length}</span>}>
     <p className="muted" style={{ margin: '0 0 8px', fontSize: 13.5 }}>{gapSummary(gaps)}.{canEnter(D) ? ' Fill a missed day from the paper book, or mark an outlet closed.' : ' The farm manager or the person on duty fills these in.'}</p>
     <div className="list">{shown.map((g) => <div className="li" key={`${g.day}-${g.scope}-${g.id}`}>

@@ -11,6 +11,7 @@ import { Login, MfaEnroll, MfaVerify, NewPassword } from './views/Auth';
 import { Alerts, Money, Overview, Report, Stock, type ViewProps } from './views/Management';
 import { ClerkHome, Feed, Health, Records, Water } from './views/Farm';
 import { PosMoney, PosSales, PosStock, PosToday } from './views/SalesPoint';
+import { StoreHome, StoreItems, StoreRecords } from './views/Store';
 import { Account, Setup } from './views/Settings';
 import { NoticeList } from './views/common';
 
@@ -27,6 +28,9 @@ const TABS: Record<string, Tab> = {
   water: { label: 'Water', icon: 'drop', view: (p) => <Water {...p} /> },
   health: { label: 'Flock health', icon: 'syringe', view: (p) => <Health {...p} /> },
   records: { label: 'Records', icon: 'list', view: (p) => <Records {...p} /> },
+  store: { label: 'Store', icon: 'box', view: (p) => <StoreHome {...p} /> },
+  meds: { label: 'Store items', icon: 'syringe', view: (p) => <StoreItems {...p} /> },
+  srecords: { label: 'Records', icon: 'list', view: (p) => <StoreRecords {...p} /> },
   today: { label: 'Today', icon: 'dash', view: (p) => <PosToday {...p} /> },
   pstock: { label: 'Stock', icon: 'box', view: (p) => <PosStock {...p} /> },
   psales: { label: 'Sales', icon: 'receipt', view: (p) => <PosSales {...p} /> },
@@ -38,9 +42,10 @@ const ROLE_TABS: Record<Role, string[]> = {
   owner: ['ov', 'stock', 'money', 'report', 'setup', 'alerts', 'feed', 'water', 'health'],
   manager: ['alerts', 'ov', 'stock', 'report', 'health', 'feed', 'water', 'money', 'records', 'setup'],
   clerk: ['home', 'feed', 'water', 'health', 'records', 'me'],
+  store: ['store', 'feed', 'meds', 'srecords', 'me'],
   pos: ['today', 'pstock', 'psales', 'pmoney', 'me'],
 };
-const ROLE_NAME: Record<Role, string> = { owner: 'Owner', manager: 'Farm Manager', clerk: 'Production Clerk', pos: 'Sales point' };
+const ROLE_NAME: Record<Role, string> = { owner: 'Owner', manager: 'Farm Manager', clerk: 'Production Clerk', store: 'Inventory Clerk', pos: 'Sales point' };
 
 function useOnline() {
   const [on, setOn] = useState(navigator.onLine);

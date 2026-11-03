@@ -2,7 +2,7 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.45.4';
 import { TEMP_PASSWORD, derivedPassword, staffEmail } from './util.ts';
 
-export const ROLES = ['owner', 'manager', 'clerk', 'pos'];
+export const ROLES = ['owner', 'manager', 'clerk', 'store', 'pos'];
 export const USERNAME = /^[a-z0-9][a-z0-9._-]{2,31}$/;
 
 /** Same rule as the staff_email_shape check in the database. */

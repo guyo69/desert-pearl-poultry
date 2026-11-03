@@ -57,6 +57,7 @@ export function Overview({ D, go, version }: ViewProps) {
         const opened = D.counts_today.some((c) => c.location_id === l.id && c.kind === 'open');
         return <div className="loc" key={l.id}><div className="t"><span><LocDot id={l.id} />{l.name}</span>
           {it.length ? <span className="chip sev-info">{eggs(it.reduce((a, x) => a + x.sent_n + (x.sent_b ?? 0) + x.sent_c + x.sent_j, 0))} on the way</span>
+            : l.kind === 'van' ? <span className={`chip ${tot(st) > 0 ? 'sev-info' : ''}`}>{tot(st) > 0 ? 'Loaded' : 'Empty'}</span>
             : opened ? <span className="chip sev-ok">Open</span> : closedToday(D, l) ? <span className="chip">Closed today</span> : <span className="chip sev-amber">Not opened</span>}</div>
           <dl><div><dt>Stock</dt><dd>{eggs(tot(st))}</dd></div><div><dt>Sales today</dt><dd>{kesS(s.value)}</dd></div><div><dt>Cash at hand</dt><dd>{kesS(balance(D, `CASH:${l.id}`))}</dd></div></dl></div>;
       })}</div>

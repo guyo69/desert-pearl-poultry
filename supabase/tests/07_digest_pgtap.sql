@@ -119,8 +119,9 @@ select is((select x->>'kind' from jsonb_array_elements(weekly_facts('2026-10-05'
 -- ---------- 4. week 2: completeness first, then anomalies, at most five ----------
 select is(weekly_facts('2026-10-12', '2026-10-18', 'owner')->'baseline'->>'comparable', 'true', 'week 1 is a valid comparison');
 select ok(weekly_facts('2026-10-12', '2026-10-18', 'owner')->'production'->'change_pct' is not null, 'week-on-week shown when valid');
-select is((weekly_facts('2026-10-12', '2026-10-18', 'owner')->'completeness'->>'entered')::int, 99, '99 records entered');
-select is((weekly_facts('2026-10-12', '2026-10-18', 'owner')->'completeness'->>'expected')::int, 107, 'of 107 expected');
+-- the van has no counts since 3 Nov 2026: one check a day (empty at day end) instead of three
+select is((weekly_facts('2026-10-12', '2026-10-18', 'owner')->'completeness'->>'entered')::int, 87, '87 records entered');
+select is((weekly_facts('2026-10-12', '2026-10-18', 'owner')->'completeness'->>'expected')::int, 95, 'of 95 expected');
 select is((select g->'days' from jsonb_array_elements(weekly_facts('2026-10-12', '2026-10-18', 'owner')->'completeness'->'gaps') g where g->>'id' = 'RAYAN'),
           '["Thu 15 Oct", "Fri 16 Oct"]'::jsonb, 'Rayan Fedha gaps named by day');
 select is((select jsonb_agg(x->>'kind') from jsonb_array_elements(weekly_facts('2026-10-12', '2026-10-18', 'owner')->'insights') x),

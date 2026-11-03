@@ -1,5 +1,5 @@
 // Shapes returned by the `dashboard` database function.
-export type Role = 'owner' | 'manager' | 'clerk' | 'pos';
+export type Role = 'owner' | 'manager' | 'clerk' | 'store' | 'pos';
 /** Egg grades: N normal, B big, C cracked (sellable), J jumbo / double yolk. Damaged eggs never enter stock. */
 export type Item = 'N' | 'B' | 'C' | 'J';
 export interface Q { n: number; b: number; c: number; j: number }
@@ -15,6 +15,9 @@ export interface Location { id: string; name: string; short: string; kind: 'farm
 export interface Account { id: string; name: string; kind: 'cash' | 'till' | 'paybill' | 'bank'; location_id: string | null; sort: number }
 export interface House { id: string; name: string; birds_at_start: number; start_date: string; age_weeks_at_start: number; expected_lay: number; active: boolean; sort: number }
 export interface Medicine { id: number; name: string; category: string; unit: string; reorder: number; active: boolean; stock: number }
+export interface Supply { id: number; name: string; category: string; unit: string; reorder: number; active: boolean; stock: number }
+/** Feed or medicine the store issued to a house, waiting for the production clerk to confirm. */
+export interface StorePending { kind: 'feed' | 'med'; id: number; d: string; recorded_at: string; house: string; house_id: string | null; what: string; qty: number; unit: string; by_name: string | null }
 export interface ScheduleItem { id: number; due: string; house: string; task: string; done: boolean }
 /** Everyone gets names and roles; only management also gets the account-security fields. */
 export interface StaffLite { id: string; display_name: string; role: Role; location_id: string | null; active: boolean; username?: string; must_change_password?: boolean; mfa_enabled?: boolean; locked?: boolean }
@@ -59,11 +62,13 @@ export interface Dashboard {
   transit: Transfer[]; counts_today: StockCount[]; cash_counts_today: CashCount[];
   /** who still owes at each outlet (absent on an older server) */
   credits?: Credit[];
+  /** the farm store (absent on an older server) */
+  supplies?: Supply[]; store_pending?: StorePending[];
   notifications: Notice[];
 }
 
 export interface ActivityRow {
-  kind: 'collect' | 'mort' | 'feed' | 'water' | 'med' | 'xfer' | 'sale' | 'brk' | 'count' | 'issue' | 'money' | 'cash' | 'credit';
+  kind: 'collect' | 'mort' | 'feed' | 'water' | 'med' | 'xfer' | 'sale' | 'brk' | 'count' | 'issue' | 'money' | 'cash' | 'credit' | 'supply' | 'confirm';
   id: number; d: string; recorded_at: string; by_name: string | null; by_role: Role | null;
   location_id: string | null; voided: boolean; data: Record<string, any>;
 }

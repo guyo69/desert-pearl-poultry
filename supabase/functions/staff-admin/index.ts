@@ -19,7 +19,7 @@ import { downloadUrl, listBackups, runBackup } from '../_shared/backup.ts';
 function checkShape(role: unknown, location_id: unknown): string | null {
   if (typeof role !== 'string' || !ROLES.includes(role)) return 'Choose a role.';
   if (role !== 'owner' && !location_id) return 'Choose a location.';
-  if ((role === 'clerk' || role === 'manager') && location_id !== 'FARM') return 'Managers and clerks work at the Central Farm.';
+  if ((role === 'clerk' || role === 'store' || role === 'manager') && location_id !== 'FARM') return 'Managers and clerks work at the Central Farm.';
   return null;
 }
 

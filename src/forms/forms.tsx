@@ -2,8 +2,8 @@
 // function behind it re-checks everything, so these checks are for speed only.
 import { rpc, staffAdmin } from '../lib/api';
 import { addDays, dlabel, eggs, kes, n0, pct } from '../lib/format';
-import { ITEMS, ITEM_NAME, accName, balance, band, cashAcc, collected, damagedAtFarm, dayLedger, feedInfo, hensNow, houseAge, locName, mix, priceOf, salesOn, stockNow, tankInfo, tot, waterOn } from '../lib/metrics';
-import type { Credit, Dashboard, House, Item, Medicine, Q, ScheduleItem, StaffLite, Transfer } from '../lib/types';
+import { ITEMS, ITEM_NAME, isVan, accName, balance, band, cashAcc, collected, damagedAtFarm, dayLedger, feedInfo, hensNow, houseAge, locName, mix, priceOf, salesOn, stockNow, tankInfo, tot, waterOn } from '../lib/metrics';
+import type { Credit, Dashboard, House, Item, Medicine, Q, ScheduleItem, StaffLite, StorePending, Supply, Transfer } from '../lib/types';
 import type { Field, FormSpec, V } from '../ui/ui';
 
 const houseOpts = (D: Dashboard): [string, string][] => D.houses.map((h) => [h.id, h.name]);
@@ -81,7 +81,9 @@ export function houseDayForm(D: Dashboard, day?: string): FormSpec {
   for (const h of D.houses) fields.push(
     { type: 'note', text: <div className="dest"><b>{h.name}</b></div> },
     ...gradeFields(`${h.id}_`, { dmg: 'Damaged / broken' }),
-    { type: 'pair', fields: [{ type: 'num', id: `${h.id}_deaths`, label: 'Deaths', suffix: 'birds' }, { type: 'num', id: `${h.id}_feed`, label: 'Feed given', suffix: 'bags', step: 0.5 }] },
+    // feed comes from the store (the inventory clerk issues it); only the farm manager enters it here, for days the store did not
+    D.me.role === 'manager' ? { type: 'pair', fields: [{ type: 'num', id: `${h.id}_deaths`, label: 'Deaths', suffix: 'birds' }, { type: 'num', id: `${h.id}_feed`, label: 'Feed given (if the store did not issue it)', suffix: 'bags', step: 0.5 }] }
+      : { type: 'num', id: `${h.id}_deaths`, label: 'Deaths', suffix: 'birds' },
     { type: 'num', id: `${h.id}_water`, label: 'Water drunk', suffix: 'L' },
   );
   fields.push({ type: 'select', id: 'no_deaths', label: 'Deaths', def: 'yes',
@@ -98,14 +100,14 @@ export function houseDayForm(D: Dashboard, day?: string): FormSpec {
   });
   return {
     title: 'Daily house sheet',
-    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>The farm book in one go: eggs by grade, deaths, feed and water for each house. Leave a house blank if nothing is new. Age, hens and lay rate fill in by themselves.</p>,
+    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>The farm book in one go: eggs by grade, deaths and water for each house (feed comes from the store). Leave a house blank if nothing is new. Age, hens and lay rate fill in by themselves.</p>,
     fields, submit: 'Save the day',
     calc: (v) => <>{lines(v).map((x) => <div key={x.h.id} className="sheet-line">
       <Row l={`${x.h.name} · ${x.age} weeks`} r={`${n0(x.before)} → ${n0(x.close)} hens`} />
       <Row l={`Laid${x.already ? ` (incl. ${eggs(x.already)} already entered)` : ''}`} r={`${eggs(x.laid)} · ${x.before ? pct(x.laid / x.before) : '–'} lay`} />
       {x.before > 0 && x.laid / x.before < x.h.expected_lay - 0.05 && x.laid > 0 && <Bad l="Below the expected lay rate" r={pct(x.h.expected_lay, 0)} />}
     </div>)}
-      <Row l="Feed for the day" r={`${n0(lines(v).reduce((a, x) => a + x.feed, 0) / s.bag_kg)} bags · ${n0(lines(v).reduce((a, x) => a + x.feed, 0))} kg`} />
+      {D.me.role === 'manager' && <Row l="Feed for the day" r={`${n0(lines(v).reduce((a, x) => a + x.feed, 0) / s.bag_kg)} bags · ${n0(lines(v).reduce((a, x) => a + x.feed, 0))} kg`} />}
       <Row l="Water for the day" r={`${n0(lines(v).reduce((a, x) => a + x.water, 0))} L`} /></>,
     onSubmit: async (v) => {
       const rows = lines(v).filter((x) => tot(x.q) + x.dmg + x.deaths + x.feed + x.water > 0)
@@ -289,22 +291,221 @@ export const mortForm = (D: Dashboard): FormSpec => ({
     await rpc('rpc_mortality', { p_house: v.house, p_birds: v.n, p_cause: v.cause }); return 'Mortality recorded. Hen count updated.'; },
 });
 
+/* ---------------- the farm store (inventory clerk) ---------------- */
+const houseIdOpts = (D: Dashboard): [string, string][] => [['', 'Choose a house'], ...houseOpts(D)];
+const store = (action: string, p: Record<string, unknown>) => rpc<{ id: number; stock: number; unit?: string; name?: string; created?: boolean }>('rpc_store', { p_action: action, p });
+
+/** Feed delivered to the store. Quantities only: the farm manager records any payment as an expense. */
+export function storeFeedInForm(D: Dashboard): FormSpec {
+  const f = feedInfo(D), kgBag = D.settings.bag_kg;
+  return {
+    title: 'Feed received',
+    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Count the bags as they come off the lorry. Payment is recorded by the farm manager.</p>,
+    fields: [
+      { type: 'pair', fields: [{ type: 'num', id: 'bags', label: 'Bags received', suffix: 'bags' }, { type: 'num', id: 'kgbag', label: 'Bag size', suffix: 'kg', def: kgBag }] },
+      { type: 'text', id: 'note', label: 'Supplier or delivery note (optional)', placeholder: 'e.g. Unga Farm Care, note 4512' },
+    ],
+    calc: (v) => <><Row l="In store now" r={`${n0(f.stockBags)} bags`} /><Row l="After this" r={`${n0(f.stockBags + (v.bags || 0) * (v.kgbag || kgBag) / kgBag)} bags`} /></>,
+    onSubmit: async (v) => {
+      if (!(v.bags > 0)) throw new Error('Enter the bags received.');
+      await store('feed_in', { bags: v.bags, kg_per_bag: v.kgbag || kgBag, note: String(v.note ?? '').trim() || null });
+      return `${n0(v.bags)} bags received into the store.`;
+    },
+  };
+}
+
+/** Feed issued to a house. The production clerk confirms what the house received. */
+export function storeFeedIssueForm(D: Dashboard): FormSpec {
+  const f = feedInfo(D), kgBag = D.settings.bag_kg;
+  const kgOf = (v: V) => (v.bags || 0) * kgBag + (v.kg || 0);
+  return {
+    title: 'Issue feed to a house',
+    fields: [
+      { type: 'select', id: 'house', label: 'House', options: houseIdOpts(D) },
+      { type: 'pair', fields: [{ type: 'num', id: 'bags', label: 'Bags', suffix: 'bags', step: 0.5 }, { type: 'num', id: 'kg', label: 'Plus loose', suffix: 'kg' }] },
+      { type: 'select', id: 'note', label: 'Feeding', options: [['Morning feed', 'Morning'], ['Afternoon feed', 'Afternoon'], ['Extra feed', 'Extra']] },
+    ],
+    calc: (v) => { const left = f.stock - kgOf(v), b = band(left / f.target); return <>
+      <Row l="This issue" r={`${n0(kgOf(v))} kg`} />
+      <div><span>Left in the store</span><b style={{ color: `var(${b.color})` }}>{n0(left / kgBag)} bags · {pct(left / f.target, 0)} of the buffer</b></div>
+      <Row l="Next" r="The production clerk confirms what the house received" /></>; },
+    onSubmit: async (v) => {
+      if (!v.house) throw new Error('Choose the house.');
+      if (kgOf(v) <= 0) throw new Error('Enter the feed issued.');
+      await store('feed_issue', { house: v.house, kg: kgOf(v), note: v.note });
+      return `${n0(kgOf(v))} kg issued to ${D.houses.find((h) => h.id === v.house)?.name}. The production clerk confirms it.`;
+    },
+  };
+}
+
+/** Medicine and vaccines received into the store: a listed item, or a new one. */
+export function storeMedInForm(D: Dashboard, opts: { startNew?: boolean } = {}): FormSpec {
+  const active = D.medicines.filter((m) => m.active).sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+  const isNew = (v: V) => v.med === NEW;
+  return {
+    title: 'Medicine received',
+    fields: [
+      { type: 'select', id: 'med', label: 'Item', options: [...active.map((m): [string, string] => [String(m.id), `${m.category} · ${m.name} (${n0(m.stock)} ${m.unit})`]), [NEW, '+ New item: not listed yet']],
+        def: opts.startNew || !active.length ? NEW : String(active[0].id) },
+      { type: 'group', show: (v) => !isNew(v), fields: [{ type: 'num', id: 'qty', label: 'Quantity received' }] },
+      { type: 'group', show: isNew, fields: [
+        { type: 'text', id: 'name', label: 'Name', placeholder: 'e.g. Gumboro vaccine (IBD)' },
+        ...categoryFields(D),
+        { type: 'pair', fields: [{ type: 'text', id: 'unit', label: 'Counted in', placeholder: 'doses, ml, g, sachets' }, { type: 'num', id: 'nqty', label: 'Quantity received' }] },
+        { type: 'num', id: 'reorder', label: 'Warn when stock falls to', hint: 'Optional.' },
+      ] },
+      { type: 'text', id: 'note', label: 'Supplier or note (optional)' },
+    ],
+    onSubmit: async (v) => {
+      const note = String(v.note ?? '').trim() || null;
+      if (isNew(v)) {
+        if (!String(v.name ?? '').trim()) throw new Error('Enter the name of the medicine or vaccine.');
+        if (!String(v.unit ?? '').trim()) throw new Error('Enter what it is counted in, e.g. doses, ml, g or sachets.');
+        if (!(v.nqty > 0)) throw new Error('Enter the quantity received.');
+        const r = await store('med_new', { name: v.name, category: chosenCategory(v), unit: v.unit, qty: v.nqty, reorder: v.reorder || 0, note });
+        return `${r.name} in the store: ${n0(r.stock)} ${r.unit}.`;
+      }
+      if (!(v.qty > 0)) throw new Error('Enter the quantity received.');
+      const r = await store('med_in', { medicine: Number(v.med), qty: v.qty, note });
+      return `${r.name}: ${n0(r.stock)} ${r.unit} in the store.`;
+    },
+  };
+}
+
+/** Medicine issued to a house. The production clerk confirms what the house received. */
+export function storeMedIssueForm(D: Dashboard): FormSpec {
+  const active = D.medicines.filter((m) => m.active && m.stock > 0).sort((a, b) => a.name.localeCompare(b.name));
+  return {
+    title: 'Issue medicine to a house',
+    fields: [
+      { type: 'select', id: 'med', label: 'Item', options: [['', 'Choose an item'], ...active.map((m): [string, string] => [String(m.id), `${m.name} (${n0(m.stock)} ${m.unit} in store)`])] },
+      { type: 'select', id: 'house', label: 'House', options: houseIdOpts(D) },
+      { type: 'num', id: 'qty', label: 'Quantity issued' },
+      { type: 'text', id: 'note', label: 'Note (optional)', placeholder: 'e.g. booster dose, vet name' },
+    ],
+    calc: (v) => { const m = D.medicines.find((x) => String(x.id) === v.med); return m ? <Row l="Left in the store" r={`${n0(m.stock - (v.qty || 0))} ${m.unit}`} /> : null; },
+    onSubmit: async (v) => {
+      if (!v.med) throw new Error('Choose the item.');
+      if (!v.house) throw new Error('Choose the house.');
+      if (!(v.qty > 0)) throw new Error('Enter the quantity issued.');
+      const r = await store('med_issue', { medicine: Number(v.med), house: v.house, qty: v.qty, note: String(v.note ?? '').trim() || null });
+      return `Issued. ${n0(r.stock)} ${r.unit} left. The production clerk confirms it.`;
+    },
+  };
+}
+
+const SUPPLY_CATS = ['Packaging', 'Cleaning and disinfectant', 'Tools and equipment', 'Litter and bedding', 'Other'];
+/** Other supplies received: a listed item, or a new one. */
+export function supplyInForm(D: Dashboard, pick?: Supply): FormSpec {
+  const list = (D.supplies ?? []).filter((x) => x.active);
+  const isNew = (v: V) => v.item === NEW;
+  return {
+    title: 'Supplies received',
+    fields: [
+      { type: 'select', id: 'item', label: 'Item', options: [...list.map((x): [string, string] => [String(x.id), `${x.name} (${n0(x.stock)} ${x.unit})`]), [NEW, '+ New item: not listed yet']],
+        def: pick ? String(pick.id) : list.length ? String(list[0].id) : NEW },
+      { type: 'group', show: isNew, fields: [
+        { type: 'text', id: 'name', label: 'Name', placeholder: 'e.g. Egg trays, Jik, wheelbarrow' },
+        { type: 'select', id: 'cat', label: 'Category', options: SUPPLY_CATS.map((c): [string, string] => [c, c]) },
+        { type: 'pair', fields: [{ type: 'text', id: 'unit', label: 'Counted in', placeholder: 'trays, litres, pieces' }, { type: 'num', id: 'reorder', label: 'Warn when it falls to' }] },
+      ] },
+      { type: 'num', id: 'qty', label: 'Quantity received' },
+      { type: 'text', id: 'note', label: 'Supplier or note (optional)' },
+    ],
+    onSubmit: async (v) => {
+      if (!(v.qty > 0)) throw new Error('Enter the quantity received.');
+      const note = String(v.note ?? '').trim() || null;
+      if (isNew(v)) {
+        if (!String(v.name ?? '').trim()) throw new Error('Enter the name of the item.');
+        if (!String(v.unit ?? '').trim()) throw new Error('Enter what it is counted in.');
+        const r = await store('supply_new', { name: v.name, category: v.cat, unit: v.unit, reorder: v.reorder || 0, qty: v.qty, note });
+        return `${r.name}: ${n0(r.stock)} ${r.unit} in the store.`;
+      }
+      const r = await store('supply_in', { supply: Number(v.item), qty: v.qty, note });
+      return `Received. ${n0(r.stock)} ${r.unit} in the store.`;
+    },
+  };
+}
+
+/** Other supplies issued from the store, with what or where they went. */
+export function supplyOutForm(D: Dashboard, pick?: Supply): FormSpec {
+  const list = (D.supplies ?? []).filter((x) => x.active && x.stock > 0);
+  const where: [string, string][] = [...D.houses.map((h): [string, string] => [h.name, h.name]), ...D.locations.map((l): [string, string] => [l.name, l.name]), ['Farm use', 'Farm use'], [NEW, 'Something else']];
+  return {
+    title: 'Issue supplies',
+    fields: [
+      { type: 'select', id: 'item', label: 'Item', options: [['', 'Choose an item'], ...list.map((x): [string, string] => [String(x.id), `${x.name} (${n0(x.stock)} ${x.unit} in store)`])], def: pick ? String(pick.id) : '' },
+      { type: 'num', id: 'qty', label: 'Quantity issued' },
+      { type: 'select', id: 'to', label: 'Issued to', options: where },
+      { type: 'group', show: (v) => v.to === NEW, fields: [{ type: 'text', id: 'other', label: 'What for', placeholder: 'e.g. repairs to House B roof' }] },
+      { type: 'text', id: 'note', label: 'Note (optional)' },
+    ],
+    calc: (v) => { const x = list.find((s) => String(s.id) === v.item); return x ? <Row l="Left in the store" r={`${n0(x.stock - (v.qty || 0))} ${x.unit}`} /> : null; },
+    onSubmit: async (v) => {
+      if (!v.item) throw new Error('Choose the item.');
+      if (!(v.qty > 0)) throw new Error('Enter the quantity issued.');
+      const purpose = v.to === NEW ? String(v.other ?? '').trim() : String(v.to ?? '');
+      if (!purpose) throw new Error('Say what it was issued for.');
+      const r = await store('supply_out', { supply: Number(v.item), qty: v.qty, purpose, note: String(v.note ?? '').trim() || null });
+      return `Issued. ${n0(r.stock)} ${r.unit} left.`;
+    },
+  };
+}
+
+/** Edit a supply item (name, category, unit, reorder level, in use). */
+export const supplyForm = (_D: Dashboard, x: Supply): FormSpec => ({
+  title: `Edit ${x.name}`,
+  fields: [
+    { type: 'text', id: 'name', label: 'Name', def: x.name },
+    { type: 'select', id: 'cat', label: 'Category', options: [...new Set([...SUPPLY_CATS, x.category])].map((c): [string, string] => [c, c]), def: x.category },
+    { type: 'pair', fields: [{ type: 'text', id: 'unit', label: 'Counted in', def: x.unit }, { type: 'num', id: 'reorder', label: 'Warn when it falls to', def: x.reorder }] },
+    { type: 'select', id: 'active', label: 'In use', options: [['true', 'Yes'], ['false', 'No longer used']], def: String(x.active) },
+  ],
+  onSubmit: async (v) => {
+    await rpc('rpc_supply_save', { p_id: x.id, p_name: v.name, p_category: v.cat, p_unit: v.unit, p_reorder: v.reorder || 0, p_active: v.active === 'true' });
+    return 'Saved.';
+  },
+});
+
+/** The production clerk confirms what a house received from the store. */
+export function confirmIssueForm(_D: Dashboard, x: StorePending): FormSpec {
+  return {
+    title: `Confirm ${x.kind === 'feed' ? 'feed' : x.what} for ${x.house}`,
+    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>The store issued {n0(x.qty)} {x.unit}{x.by_name ? ` (${x.by_name})` : ''} on {dlabel(x.d)}. Enter what actually reached {x.house}.</p>,
+    fields: [
+      { type: 'num', id: 'got', label: 'Received at the house', suffix: x.unit, def: x.qty },
+      { type: 'text', id: 'note', label: 'Note (needed if less arrived)', placeholder: 'e.g. one bag torn' },
+    ],
+    calc: (v) => (v.got < x.qty ? <Bad l="Short" r={`${n0(x.qty - v.got)} ${x.unit}. The farm manager and the store are told.`} /> : <Ok>All of it arrived</Ok>),
+    onSubmit: async (v) => {
+      if (!(v.got >= 0)) throw new Error('Enter what the house received.');
+      if (v.got > x.qty) throw new Error(`The store issued ${n0(x.qty)} ${x.unit}. Enter that or less.`);
+      if (v.got < x.qty && !String(v.note ?? '').trim()) throw new Error('Say what happened to the rest.');
+      await rpc('rpc_confirm_issue', { p_kind: x.kind, p_id: x.id, p_received: v.got, p_note: String(v.note ?? '').trim() || null });
+      return v.got < x.qty ? `Confirmed ${n0(v.got)} ${x.unit}. The shortfall is flagged.` : 'Confirmed.';
+    },
+  };
+}
+
 /* ---------------- stock movement ---------------- */
 /** Issue eggs: send stock from one location to another. One destination per entry, chosen from a list. */
-export function dispatchForm(D: Dashboard, from: string): FormSpec {
-  const st = stockNow(D, from);
+/** Send eggs to another location. For the van: "Deliver eggs", and `leftover` fills in everything still on board. */
+export function dispatchForm(D: Dashboard, from: string, opts: { leftover?: boolean } = {}): FormSpec {
+  const st = stockNow(D, from), van = isVan(D, from);
   const dests = D.locations.filter((l) => l.id !== from);
   const name = (id: unknown) => dests.find((l) => l.id === id)?.name ?? '';
   return {
-    title: 'Issue eggs',
-    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Send eggs from {locName(D, from)} to another location. That location confirms the count when they arrive.</p>,
+    title: opts.leftover ? 'Drop off what is left' : van ? 'Deliver eggs' : 'Issue eggs',
+    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>{opts.leftover ? 'The van ends the day empty. Leave what is on board at the farm or an outlet; they confirm the count.'
+      : van ? 'Deliver eggs from the van to the farm or an outlet. They confirm the count when it arrives.'
+      : `Send eggs from ${locName(D, from)} to another location. That location confirms the count when they arrive.`}</p>,
     fields: [
-      { type: 'note', text: <div><span>In stock at {locName(D, from)}</span><b>{mix(st)}</b></div> },
+      { type: 'note', text: <div><span>{van ? 'On the van' : `In stock at ${locName(D, from)}`}</span><b>{mix(st)}</b></div> },
       { type: 'select', id: 'to', label: 'Send to', options: [['', 'Choose a location'], ...dests.map((l): [string, string] => [l.id, l.name])] },
-      ...gradeFields(''),
+      ...gradeFields('', opts.leftover ? { def: { n: Math.max(0, st.n + st.b), c: Math.max(0, st.c), j: Math.max(0, st.j) } } : {}),
       { type: 'text', id: 'note', label: 'Note (optional)', placeholder: 'e.g. vehicle or who is carrying them' },
     ],
-    submit: 'Issue eggs',
+    submit: opts.leftover ? 'Drop off' : van ? 'Deliver' : 'Issue eggs',
     calc: (v) => {
       const q = gradesOf(v);
       if (!v.to) return <div><span className="muted">Choose where the eggs are going</span></div>;
@@ -318,7 +519,7 @@ export function dispatchForm(D: Dashboard, from: string): FormSpec {
       if (!v.to) throw new Error('Choose where the eggs are going.');
       if (!tot(q)) throw new Error('Enter the eggs you are sending.');
       await rpc('rpc_dispatch_many', { p_from: from, p_items: [{ to: v.to, n: q.n, b: q.b, c: q.c, j: q.j }], p_note: String(v.note ?? '').trim() || null });
-      return `${eggs(tot(q))} issued to ${name(v.to)}. They confirm the count on arrival.`;
+      return `${eggs(tot(q))} ${van ? 'delivered' : 'issued'} to ${name(v.to)}. They confirm the count on arrival.`;
     },
   };
 }
@@ -682,7 +883,7 @@ export const scheduleForm = (D: Dashboard, e?: ScheduleItem): FormSpec => ({
   onSubmit: async (v) => { await rpc('rpc_save_schedule', { p_id: e?.id ?? null, p_due: v.due, p_house: v.house, p_task: v.task }); return 'Schedule saved.'; },
 });
 
-const ROLE_OPTS: [string, string][] = [['pos', 'Sales point attendant / van driver'], ['clerk', 'Production clerk'], ['manager', 'Farm manager'], ['owner', 'Owner']];
+const ROLE_OPTS: [string, string][] = [['pos', 'Sales point attendant / van driver'], ['clerk', 'Production clerk'], ['store', 'Inventory clerk'], ['manager', 'Farm manager'], ['owner', 'Owner']];
 export const staffForm = (D: Dashboard, s?: StaffLite & { email?: string | null; digest_enabled?: boolean; digest_opted_out_at?: string | null }): FormSpec => ({
   title: s ? `Edit ${s.display_name}` : 'Add staff member',
   intro: !s ? <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>They sign in with this username and the temporary password <b>0000</b>. It works once, for 72 hours, and they must choose their own password straight away. Owners and farm managers also set up two-step sign-in.</p> : undefined,

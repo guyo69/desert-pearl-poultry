@@ -13,7 +13,7 @@ export interface BookRow {
 }
 export interface MonthBook {
   month: string; from: string; to: string; today: string; first_month: string; generated_at: string; tray: number;
-  locations: { id: string; name: string; short: string }[];
+  locations: { id: string; name: string; short: string; kind?: string }[];
   rows: BookRow[];
 }
 
@@ -32,16 +32,20 @@ export interface DayLine {
 }
 export const expected = (l: DayLine) => l.opening! + l.received! - l.sold! - l.loss! - l.out! - l.sent!;
 
-export function dayLine(r: BookRow, today: string, tray: number): DayLine {
+/** One outlet day. The van has no counts: its opening is what was on board, and the note says what was left at day end. */
+export function dayLine(r: BookRow, today: string, tray: number, van = false): DayLine {
   const t = (eggs: number) => eggs / tray;
   const moved = r.recv_xfer + r.collected + r.taken_in + r.sent + r.broken + r.issued + r.sold + r.credit_paid;
   const counted = r.open_cnt != null || r.close_cnt != null;
-  if (r.d === today && r.close_cnt == null) return { d: r.d, state: 'waiting', notes: ['Waiting for the day close'] };
+  if (r.d === today && r.close_cnt == null && !van) return { d: r.d, state: 'waiting', notes: ['Waiting for the day close'] };
   if (!moved && !counted && !r.sales) return { d: r.d, state: 'nothing', notes: ['Nothing entered'] };
   const notes: string[] = [];
-  const opening = r.open_cnt ?? r.prev_close ?? r.book_open;
-  if (r.open_cnt == null) notes.push(r.prev_close != null ? 'Opening is yesterday\'s closing count' : 'Opening from the app\'s stock book (no count)');
-  if (r.close_cnt == null) notes.push('No closing count');
+  const opening = van ? r.book_open : r.open_cnt ?? r.prev_close ?? r.book_open;
+  if (van) {
+    const left = r.book_open + r.recv_xfer + r.taken_in - r.sold - r.broken - r.issued - r.sent;
+    notes.push(left > 0 ? `Van, no counts: ${Math.round(left)} eggs still on board at the end of the day` : 'Van, no counts: ended the day empty');
+  } else if (r.open_cnt == null) notes.push(r.prev_close != null ? 'Opening is yesterday\'s closing count' : 'Opening from the app\'s stock book (no count)');
+  if (r.close_cnt == null && !van) notes.push('No closing count');
   if (r.imported) notes.push('Sales from the paper book');
   if (r.collected) notes.push('Received = eggs collected at the farm');
   const pair = (eggs: number, ksh: number): [number, number] => [t(eggs), ksh];
@@ -160,7 +164,7 @@ export function buildMonthBook(b: MonthBook): { bytes: Uint8Array; filename: str
   const sheets: Sheet[] = [];
   const totals: { name: string; row: number; lines: DayLine[] }[] = [];
   b.locations.forEach((l, i) => {
-    const lines = b.rows.filter((r) => r.loc === l.id).map((r) => dayLine(r, b.today, b.tray || 30));
+    const lines = b.rows.filter((r) => r.loc === l.id).map((r) => dayLine(r, b.today, b.tray || 30, l.kind === 'van'));
     const o = outletSheet(names[i + 1], `${l.name} · ${month}`, sub, lines);
     sheets.push(o.sheet);
     totals.push({ name: names[i + 1], row: o.total, lines });
