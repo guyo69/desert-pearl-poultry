@@ -186,8 +186,9 @@ do $$ begin assert (select feed_buffer_kg from settings) = 2205, 'settings: buff
 select rpc_save_settings('{"bag_kg":50}'::jsonb);
 
 -- ---------- manager ----------
+select t_as('00000000-0000-0000-0000-000000000003');
+select t_err($$select rpc_save_settings('{}'::jsonb)$$, 'not available');   -- owner and farm manager only (since 3 Nov 2026)
 select t_as('00000000-0000-0000-0000-000000000002');
-select t_err($$select rpc_save_settings('{}'::jsonb)$$, 'not available');
 select rpc_mark_read(array(select id from notifications));
 do $$ begin assert (select count(*) from notification_reads) > 0, 'reads'; end $$;
 

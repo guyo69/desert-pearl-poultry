@@ -13,7 +13,7 @@ A live production web app (installable on phones) for Desert Pearl Ventures, whi
 - **Edge functions:** `supabase/functions/`, with shared code in `_shared/`.
   - `weekly-digest`: the Monday email with its Excel attachment, plus the daily missing-entry emails.
   - `digest-optout`: the one-click unsubscribe.
-  - `staff-admin`: owner-only staff tools and backups (the backup list is no longer shown in the app).
+  - `staff-admin`: staff tools for the owner, and for the farm manager on every account except owners (no owner accounts, no making owners, not their own account); backups are owner only and no longer shown in the app.
   - `backup`, `push-notify`, `auth`.
 - **Older functions:** `pin-login` and `change-pin` are from the old PIN sign-in. Never bring PIN sign-in back.
 
@@ -73,7 +73,8 @@ Before you push, run `npm test` and `npm run build`. If you touch SQL, also run 
 - **Water drunk lowers the tank:** the tank level is the last reading less the water drunk since it (`_tank()` and the dashboard's `tank`). A new reading resets it.
 - **The activity log is ordered by the day a record is for** (`activity(..., p_cursor)`), newest day first, not by when it was entered.
 - **Skipped days:** the farm manager can enter feed used, water drunk, deaths and medicine for an earlier day, up to 62 days back (`rpc_farm_record_on`). The daily house sheet and shop sheet already take a date.
-- **Monthly outlet workbooks (owner):** Settings → Setup and the Report screen list one workbook per month. `rpc_month_book(month)` returns each outlet's day as entered; `src/lib/monthBook.ts` lays it out like the client's Daily Outlet Report template (yellow = entered, grey = formulas, values cached for phone previewers) and `src/lib/xlsx.ts` writes the file in the browser. The current month covers every day to yesterday, and today once an outlet has a closing count. This replaced the Backups card; the weekly JSON backup still runs on Sunday nights for disaster recovery.
+- **Farm manager Setup tab:** houses, prices and thresholds (`rpc_save_settings`), staff other than owners, and the monthly workbooks. Opening balances and the security log stay with the owner.
+- **Monthly outlet workbooks (owner and farm manager):** Activity → Setup and the Report screen list one workbook per month. `rpc_month_book(month)` returns each outlet's day as entered; `src/lib/monthBook.ts` lays it out like the client's Daily Outlet Report template (yellow = entered, grey = formulas, values cached for phone previewers) and `src/lib/xlsx.ts` writes the file in the browser. The current month covers every day to yesterday, and today once an outlet has a closing count. This replaced the Backups card; the weekly JSON backup still runs on Sunday nights for disaster recovery.
 - **Lucky Summer was a test outlet:** its records and the 3 Nov test entries were removed (migration 15).
 
 ## Open items

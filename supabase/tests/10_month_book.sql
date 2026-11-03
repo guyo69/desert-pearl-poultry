@@ -17,7 +17,17 @@ do $$ declare r jsonb; x jsonb; begin
   assert (select count(*) from jsonb_array_elements(r->'rows') e where e->>'loc' = 'FARM' and (e->>'collected')::int > 0) > 0, 'farm collections count as received';
 end $$;
 select t_err($$select rpc_month_book(biz_today() + 40)$$, 'not started');
+-- the farm manager can download it too, and save prices and thresholds
 select t_as('00000000-0000-0000-0000-000000000002');
+do $$ begin
+  assert jsonb_array_length(rpc_month_book()->'rows') > 0, 'farm manager gets the book';
+  perform rpc_save_settings('{"cash_tol": 150}'::jsonb);
+  assert (select cash_tol from settings) = 150, 'farm manager saves settings';
+end $$;
+select t_as('00000000-0000-0000-0000-000000000003');
+select t_err($$select rpc_month_book()$$, 'not available');
+select t_err($$select rpc_save_settings('{"cash_tol": 1}'::jsonb)$$, 'not available');
+select t_as('00000000-0000-0000-0000-000000000006');
 select t_err($$select rpc_month_book()$$, 'not available');
 select t_as(null);
 reset role;

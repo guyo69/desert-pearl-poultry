@@ -689,7 +689,7 @@ export const staffForm = (D: Dashboard, s?: StaffLite & { email?: string | null;
   fields: [
     { type: 'text', id: 'name', label: 'Name', def: s?.display_name ?? '' },
     { type: 'text', id: 'username', label: 'Username (lowercase, no spaces)', def: s?.username ?? '', placeholder: 'e.g. jane.w' },
-    { type: 'select', id: 'role', label: 'Role', options: ROLE_OPTS, def: s?.role ?? 'pos' },
+    { type: 'select', id: 'role', label: 'Role', options: D.me.role === 'owner' ? ROLE_OPTS : ROLE_OPTS.filter(([r]) => r !== 'owner'), def: s?.role ?? 'pos' },
     { type: 'select', id: 'loc', label: 'Location', options: D.locations.map((l): [string, string] => [l.id, l.name]), def: s?.location_id ?? 'FARM' },
     ...(s ? [{ type: 'select', id: 'active', label: 'Access', options: [['true', 'Active'], ['false', 'Disabled']], def: String(s.active) } as Field] : []),
     { type: 'text', id: 'email', label: 'Email (optional, for the weekly digest)', def: s?.email ?? '', placeholder: 'name@example.com' },

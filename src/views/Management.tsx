@@ -228,7 +228,7 @@ export function Report({ D, version }: ViewProps) {
       <tbody>{I.actions.map((r, i) => <tr key={i}><td><span className={`chip ${sevClass(r[0] === 'High' ? 'orange' : 'amber')}`}>{r[0]}</span></td><td>{r[1]}</td><td>{r[2]}</td></tr>)}</tbody></table></div>
       : <Empty>No actions needed this week.</Empty>}
       <p className="muted" style={{ fontSize: 12.5, margin: '12px 0 0' }}>Built from staff records. Expected lay rates come from each house's settings; use the figures in the breed guide the farm follows.</p></Card>
-    {D.me.role === 'owner' && <MonthBooks D={D} />}
+    {(D.me.role === 'owner' || D.me.role === 'manager') && <MonthBooks D={D} />}
   </div>;
 }
 

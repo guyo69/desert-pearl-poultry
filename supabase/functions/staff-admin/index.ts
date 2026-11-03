@@ -1,9 +1,12 @@
-// Staff accounts. Owner only, and only from a fully verified session
-// (password set, two-step sign-in passed). Called through the gateway.
+// Staff accounts. The owner, and the farm manager for everyone except owners,
+// only from a fully verified session (password set, two-step sign-in passed).
+// The farm manager cannot see, create or change owner accounts, cannot make
+// anyone an owner, cannot change their own account here, and has no backups.
+// Called through the gateway.
 //   { action: 'list' }
 //   { action: 'create', username, display_name, role, location_id, email?, digest_enabled? }   -> temporary password 0000 (72 h)
 //   { action: 'update', staff_id, username?, display_name?, role?, location_id?, active?, email?, digest_enabled? }
-//     email: '' clears it. Only this function (owner only) reads or writes staff emails.
+//     email: '' clears it. Only this function reads or writes staff emails.
 //   { action: 'reset_password', staff_id }   -> temporary password 0000 (72 h), signed out everywhere
 //   { action: 'reset_mfa', staff_id }        -> two-step removed; owner/manager must set it up again
 //   { action: 'unlock', staff_id }           -> clears failed-attempt lockouts
@@ -36,7 +39,8 @@ Deno.serve(async (req) => {
   const me = await caller(db, req);
   try {
     if (!me || me.state !== 'ready') return json({ error: 'Sign in again.', code: 'SIGNED_OUT' }, 401);
-    if (me.staff.role !== 'owner') { await log(false, 'not owner'); return json({ error: 'Only the owner can manage staff.' }, 403); }
+    const isOwner = me.staff.role === 'owner';
+    if (!isOwner && me.staff.role !== 'manager') { await log(false, 'not owner or manager'); return json({ error: 'Only the owner or farm manager can manage staff.' }, 403); }
     const { data: g } = await db.rpc('auth_check', { p_kind: 'admin', p_ip: ip, p_subject: null });
     if (g && !g.allowed) return json({ error: 'Too many requests. Wait a few minutes.' }, 429);
 
@@ -50,12 +54,13 @@ Deno.serve(async (req) => {
       const locked = (s: { id: string; username: string }) =>
         (counters ?? []).filter((c) => c.key === `sub:login:${s.username}` || c.key.startsWith('sub:') && c.key.endsWith(`:${s.id}`))
           .map((c) => c.locked_until).sort().pop() ?? null;
-      return json({ staff: (staff ?? []).map((s) => ({
+      return json({ staff: (staff ?? []).filter((s) => isOwner || s.role !== 'owner').map((s) => ({
         ...s, mfa_enabled: (factors ?? []).some((f) => f.staff_id === s.id && f.confirmed_at),
         mfa_required: false, locked_until: locked(s),   // two-step is optional for every role
       })) });
     }
 
+    if (action.startsWith('backup_') && !isOwner) { await log(false, 'backups are for the owner'); return json({ error: 'Only the owner can use backups.' }, 403); }
     if (action === 'backup_list') return json({ backups: await listBackups(db) });
     if (action === 'backup_now') {
       const r = await runBackup(db, me.staff.username);
@@ -76,6 +81,7 @@ Deno.serve(async (req) => {
       if (!USERNAME.test(username)) return json({ error: 'Username: 3 to 32 lowercase letters, numbers, dots or dashes.' }, 400);
       const bad = checkShape(role, location_id);
       if (bad) return json({ error: bad }, 400);
+      if (role === 'owner' && !isOwner) { await log(false, 'manager tried to create an owner'); return json({ error: 'Only the owner can add an owner.' }, 403); }
       let email: string | null | undefined;
       try { email = emailOf(body.email); } catch (x) { return json({ error: (x as Error).message }, 400); }
       const id = await createStaff(db, { username, display_name, role, location_id });
@@ -89,6 +95,8 @@ Deno.serve(async (req) => {
     const staff_id = str(body.staff_id, 40);
     const { data: target } = await db.from('staff').select('*').eq('id', staff_id).maybeSingle();
     if (!target) return json({ error: 'Staff member not found.' }, 404);
+    if (!isOwner && target.role === 'owner') { await log(false, 'manager tried to change an owner account', target.username); return json({ error: 'Staff member not found.' }, 404); }
+    if (!isOwner && staff_id === me.uid && action !== 'sign_out') return json({ error: 'Change your own details under My account, or ask the owner.' }, 400);
 
     if (action === 'reset_password') {
       if (staff_id === me.uid) return json({ error: 'Change your own password under My account.' }, 400);
@@ -127,6 +135,7 @@ Deno.serve(async (req) => {
       const location_id = role === 'owner' ? null : (str(body.location_id, 20) || target.location_id);
       const bad = checkShape(role, location_id);
       if (bad) return json({ error: bad }, 400);
+      if (role === 'owner' && !isOwner) { await log(false, 'manager tried to make an owner', target.username); return json({ error: 'Only the owner can make someone an owner.' }, 403); }
       const active = typeof body.active === 'boolean' ? body.active : target.active;
       if (staff_id === me.uid && (!active || role !== 'owner')) return json({ error: 'You cannot remove your own owner access.' }, 400);
       const username = str(body.username, 40).trim().toLowerCase() || target.username;

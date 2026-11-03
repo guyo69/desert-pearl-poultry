@@ -81,10 +81,12 @@ function Staff({ D }: ViewProps) {
     if (confirmText && !window.confirm(confirmText)) return;
     try { await staffAdmin({ action, staff_id: s.id }); ui.toast(done); load(); } catch (e) { ui.toast((e as Error).message); }
   };
+  const self = (s: StaffAdminRow) => s.id === D.me.id && D.me.role !== 'owner';
   const manage = (s: StaffAdminRow) => {
+    if (self(s)) { ui.toast('Change your own details under My account below, or ask the owner.'); return; }
     const locked = s.locked_until && new Date(s.locked_until) > new Date();
     ui.openPanel(s.display_name, <div className="list">
-      <div className="li"><div className="mid"><b>Edit name, username, role, access or email</b><small>Disabling an account signs it out at once. Only owners see email addresses.</small></div><button className="btn sm alt" onClick={() => ui.openForm(staffForm(D, s))}>Edit</button></div>
+      <div className="li"><div className="mid"><b>Edit name, username, role, access or email</b><small>Disabling an account signs it out at once. Only the owner and farm manager see email addresses.</small></div><button className="btn sm alt" onClick={() => ui.openForm(staffForm(D, s))}>Edit</button></div>
       {s.id !== D.me.id && <div className="li"><div className="mid"><b>Reset password</b><small>Temporary password 0000 for 72 hours; they choose a new one. Signs them out everywhere.</small></div>
         <button className="btn sm alt" onClick={run(s, 'reset_password', `${s.display_name} can sign in with 0000 for 72 hours and must choose a new password.`, `Reset ${s.display_name}'s password to the temporary 0000?`)}>Reset</button></div>}
       {s.id !== D.me.id && s.mfa_enabled && <div className="li"><div className="mid"><b>Reset two-step sign-in</b><small>For a lost phone. {s.mfa_required ? 'They must set it up again at their next sign-in.' : ''}</small></div>
@@ -171,20 +173,21 @@ export function Setup(p: ViewProps & { signOut: (everywhere?: boolean) => void }
   const { D, version } = p, ui = useUI();
   const [sec, setSec] = useState<'activity' | 'setup' | 'security'>('activity');
   const [loc, setLoc] = useState<string>('all');
-  const owner = D.me.role === 'owner';
+  const owner = D.me.role === 'owner', manager = D.me.role === 'manager';
   return <>
     {owner && <Seg value={sec} options={[['activity', 'Activity log'], ['setup', 'Setup'], ['security', 'Security']]} onChange={setSec} />}
+    {manager && <Seg value={sec} options={[['activity', 'Activity log'], ['setup', 'Setup']]} onChange={setSec} />}
     {sec === 'security' ? <SecurityLog /> : sec === 'activity' ? <Card title="Activity log" aside={<Seg value={loc} options={[['all', 'All'], ...D.locations.map((l): [string, string] => [l.id, l.short])]} onChange={setLoc} />}>
       <RecordList D={D} version={version} loc={loc === 'all' ? null : loc} canVoid={false} limit={40} />
       <p className="muted" style={{ fontSize: 13, margin: '10px 0 0' }}>Every record as it was entered. Nothing here is changed or deleted.</p></Card>
     : <>
-      {!D.settings.go_live && <div className="banner warn"><div><b>Enter opening balances</b><p>On go-live morning, count eggs at every location, cash, M-Pesa and bank balances, feed and water, then enter them here.</p></div>
+      {owner && !D.settings.go_live && <div className="banner warn"><div><b>Enter opening balances</b><p>On go-live morning, count eggs at every location, cash, M-Pesa and bank balances, feed and water, then enter them here.</p></div>
         <button className="btn yolk" onClick={() => ui.openForm(openingForm(D))}>Opening balances</button></div>}
       <Houses {...p} />
       <Staff {...p} />
       <Thresholds {...p} />
       <MonthBooks D={D} />
-      {D.settings.go_live && <Card title="Opening balances" aside={<span className="muted">went live {dnum(D.settings.go_live)}</span>}>
+      {owner && D.settings.go_live && <Card title="Opening balances" aside={<span className="muted">went live {dnum(D.settings.go_live)}</span>}>
         <p className="muted" style={{ margin: '0 0 10px', fontSize: 14 }}>Re-entering counts adds a correction for the difference. Use the daily counts for routine checks.</p>
         <button className="btn sm alt" onClick={() => ui.openForm(openingForm(D))}>Re-enter opening balances</button></Card>}
     </>}
