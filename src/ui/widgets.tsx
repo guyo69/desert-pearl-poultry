@@ -87,7 +87,8 @@ export function TankCard({ D, actions }: { D: Dashboard; actions?: ReactNode }) 
       <div className="head">
         <div><div className="muted" style={{ fontSize: 13, fontWeight: 600 }}>Water tank · read {dshort(t.at.slice(0, 10)) === dshort(D.today) ? `today ${timeOf(t.at)}` : dshort(t.at.slice(0, 10))}</div>
           <div className="bigpct" style={{ color: `var(${b.color})` }}>{pct(t.level, 0)}</div>
-          <div className="kg">{n0(t.litres)} L of {n0(t.cap)} L</div></div>
+          <div className="kg">{n0(t.litres)} L of {n0(t.cap)} L</div>
+          {t.drunk > 0 && <div className="muted" style={{ fontSize: 12.5 }}>Reading {n0(t.reading)} L, less {n0(t.drunk)} L drunk since</div>}</div>
         <span className={`chip ${sevClass(b.sev)}`}><span className="dot" />{b.label}</span>
       </div>
       <Gauge level={t.level} b={b} label="Tank level" />

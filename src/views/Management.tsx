@@ -12,7 +12,7 @@ import { useEffect, useState } from 'react';
 import { loadWeeklyReport, type WeeklyInsight, type WeeklyReport } from '../lib/api';
 import { AlertList, BarList, Card, Delta, Empty, FeedCard, Kpi, LocDot, TankCard, sevClass, sevVar } from '../ui/widgets';
 import { HouseLayChart, PayChart, ProductionChart, SalesChart, WaterChart, houseColor } from './charts';
-import { NoticeList } from './common';
+import { NoticeList, OutstandingCredits } from './common';
 import { MissingDays, gapSummary, useGaps } from './Journey';
 
 export interface ViewProps { D: Dashboard; version: number; go: (tab: string) => void }
@@ -46,6 +46,7 @@ export function Overview({ D, go, version }: ViewProps) {
         </button></div> : null}
       {A.length || !gaps?.length ? <AlertList list={A} limit={gaps?.length ? 3 : 4} /> : null}
     </Card>
+    <OutstandingCredits D={D} limit={5} />
     <Card title="Egg production"><ProductionChart D={D} /></Card>
     <Card title="Water drunk"><WaterChart D={D} /></Card>
     <Card title="Sales"><SalesChart D={D} /></Card>
@@ -117,8 +118,8 @@ export function Money({ D }: ViewProps) {
   const cash = D.accounts.filter((a) => a.kind === 'cash');
   const sumK = (k: string) => D.money_daily.filter((r) => r.kind === k).reduce((a, r) => a + Number(r.amount), 0);
   const total = totalFunds(D), inWindow = D.money_daily.reduce((a, r) => a + Number(r.amount), 0), start = total - inWindow;
-  const sales = sumK('sale'), exp = -sumK('expense'), fees = -sumK('fee'), vari = sumK('variance'), open = sumK('opening'), net = sumK('move_in') + sumK('move_out');
-  const expected = start + sales - exp - fees + vari + open + net;
+  const sales = sumK('sale'), credPaid = sumK('credit_paid'), exp = -sumK('expense'), fees = -sumK('fee'), vari = sumK('variance'), open = sumK('opening'), net = sumK('move_in') + sumK('move_out');
+  const expected = start + sales + credPaid - exp - fees + vari + open + net;
   const ok = Math.round(expected) === Math.round(total) && Math.round(net) === 0;
   const Acc = ({ name, col, v, sub }: { name: string; col: string; v: number; sub?: string }) =>
     <div className="acc"><div className="h"><i style={{ background: `var(${col})` }} />{name}</div><div className="v">{kes(v)}</div>{sub && <div className="s">{sub}</div>}</div>;
@@ -138,6 +139,7 @@ export function Money({ D }: ViewProps) {
           <div><span>Funds on {dnum(D.from)}</span><span>{kes(start)}</span></div>
           {open !== 0 && <div><span>± Opening balances entered</span><span>{kes(open)}</span></div>}
           <div><span>+ Egg sales (cash, Till, Paybill)</span><span>{kes(sales)}</span></div>
+          {credPaid !== 0 && <div><span>+ Credit paid by customers</span><span>{kes(credPaid)}</span></div>}
           <div><span>− Expenses paid</span><span>{kes(-exp)}</span></div>
           <div><span>− M-Pesa and bank charges</span><span>{kes(-fees)}</span></div>
           <div><span>± Cash count variances</span><span>{kes(vari)}</span></div>
@@ -149,11 +151,12 @@ export function Money({ D }: ViewProps) {
       </Card>
       <Card title="Receipts by payment method"><PayChart D={D} /></Card>
     </div>
-    <Card title="Today by sales point" aside={<span className="muted">sales must equal cash + Till + Paybill</span>}><div className="tblw"><table>
-      <thead><tr><th>Location</th><th>Sales</th><th>Cash</th><th>Till</th><th>Paybill</th><th>Check</th><th>Expected cash</th><th>Last count</th></tr></thead>
-      <tbody>{D.locations.map((l) => { const s = salesOn(D, [D.today], l.id), m = s.value === s.cash + s.till + s.paybill;
+    <OutstandingCredits D={D} />
+    <Card title="Today by sales point" aside={<span className="muted">sales must equal cash + Till + Paybill + credit</span>}><div className="tblw"><table>
+      <thead><tr><th>Location</th><th>Sales</th><th>Cash</th><th>Till</th><th>Paybill</th><th>Credit</th><th>Check</th><th>Expected cash</th><th>Last count</th></tr></thead>
+      <tbody>{D.locations.map((l) => { const s = salesOn(D, [D.today], l.id), m = Math.round(s.value) === Math.round(s.cash + s.till + s.paybill + s.credit);
         const cc = D.cash_counts_today.filter((c) => c.location_id === l.id).pop();
-        return <tr key={l.id}><td><LocDot id={l.id} />{l.short}</td><td>{n0(s.value)}</td><td>{n0(s.cash)}</td><td>{n0(s.till)}</td><td>{n0(s.paybill)}</td>
+        return <tr key={l.id}><td><LocDot id={l.id} />{l.short}</td><td>{n0(s.value)}</td><td>{n0(s.cash)}</td><td>{n0(s.till)}</td><td>{n0(s.paybill)}</td><td>{s.credit ? n0(s.credit) : '–'}</td>
           <td><span className={`chip ${m ? 'sev-ok' : 'sev-red'}`}>{m ? 'Matches' : 'Mismatch'}</span></td><td>{n0(balance(D, `CASH:${l.id}`))}</td>
           <td>{cc ? <span className={`chip ${cc.diff ? 'sev-orange' : 'sev-ok'}`}>{cc.diff ? kes(cc.diff) : 'Matched'}</span> : '–'}</td></tr>; })}</tbody></table></div></Card>
   </>;

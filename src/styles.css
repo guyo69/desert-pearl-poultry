@@ -423,6 +423,8 @@ tfoot td{font-weight:700;border-top:.5px solid var(--line-strong);border-bottom:
 .seclog .li .mid small.ua{font-size:12px}
 .sec-bad{color:var(--f-none)}
 .more-btn{align-self:center}
+.day-head{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);padding:10px 2px 2px}
+.day-head:first-child{padding-top:0}
 .void{opacity:.5}
 
 @media (prefers-reduced-motion:reduce){

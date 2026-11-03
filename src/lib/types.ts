@@ -28,9 +28,9 @@ export type StockKind = 'coll' | 'out' | 'recv' | 'sold' | 'brk' | 'adj' | 'issu
 export interface StockRow extends Q { location_id: string }
 export interface StockDaily extends Q { location_id: string; d: string; kind: StockKind }
 export interface Balance { account_id: string; balance: number }
-export type MoneyKind = 'sale' | 'move_in' | 'move_out' | 'fee' | 'expense' | 'variance' | 'opening';
+export type MoneyKind = 'sale' | 'credit_paid' | 'move_in' | 'move_out' | 'fee' | 'expense' | 'variance' | 'opening';
 export interface MoneyDaily { account_id: string; d: string; kind: MoneyKind; amount: number }
-export interface SalesDaily extends Q { location_id: string; d: string; cnt: number; value: number; list_value: number; cash: number; till: number; paybill: number; imported: boolean }
+export interface SalesDaily extends Q { location_id: string; d: string; cnt: number; value: number; list_value: number; cash: number; till: number; paybill: number; credit?: number; imported: boolean }
 export interface BreakageDaily { location_id: string; d: string; transit: boolean; qty: number }
 export interface ReceivedDaily { location_id: string; d: string; sent: number; recv: number }
 export interface FarmDaily extends Q { house_id: string; d: string; dmg: number; deaths: number; hens: number }
@@ -43,6 +43,7 @@ export interface Transfer {
 export interface StockCount { id: number; location_id: string; kind: 'open' | 'close' | 'opening_balance'; d: string; recorded_at: string; cnt_n: number; cnt_b: number; cnt_c: number; cnt_j: number; adj_n: number; adj_b: number; adj_c: number; adj_j: number }
 export interface CashCount { id: number; location_id: string; counted: number; expected: number; diff: number; recorded_at: string }
 export interface Notice { id: number; created_at: string; sev: Sev; title: string; body: string; to_roles: Role[]; location_id: string | null; kind: string | null; read: boolean }
+export interface Credit { location_id: string; customer: string; owed: number; since: string; sales: number; last_paid: string | null }
 export type Sev = 'red' | 'orange' | 'amber' | 'info';
 
 export interface Dashboard {
@@ -53,13 +54,16 @@ export interface Dashboard {
   balances: Balance[]; money_daily: MoneyDaily[];
   sales_daily: SalesDaily[]; breakage_daily: BreakageDaily[]; received_daily: ReceivedDaily[];
   farm_daily: FarmDaily[]; feed_daily: FeedDaily[]; feed_stock: number;
-  water_daily: WaterDaily[]; tank: { litres: number; recorded_at: string; d: string } | null; tank_daily: { d: string; litres: number }[];
+  water_daily: WaterDaily[]; /** litres: the level now (last reading less water drunk since) */
+  tank: { litres: number; reading?: number; drunk_since?: number; recorded_at: string; d: string } | null; tank_daily: { d: string; litres: number }[];
   transit: Transfer[]; counts_today: StockCount[]; cash_counts_today: CashCount[];
+  /** who still owes at each outlet (absent on an older server) */
+  credits?: Credit[];
   notifications: Notice[];
 }
 
 export interface ActivityRow {
-  kind: 'collect' | 'mort' | 'feed' | 'water' | 'med' | 'xfer' | 'sale' | 'brk' | 'count' | 'issue' | 'money' | 'cash';
+  kind: 'collect' | 'mort' | 'feed' | 'water' | 'med' | 'xfer' | 'sale' | 'brk' | 'count' | 'issue' | 'money' | 'cash' | 'credit';
   id: number; d: string; recorded_at: string; by_name: string | null; by_role: Role | null;
   location_id: string | null; voided: boolean; data: Record<string, any>;
 }

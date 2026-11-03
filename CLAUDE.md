@@ -67,6 +67,14 @@ Before you push, run `npm test` and `npm run build`. If you touch SQL, also run 
 - **"Issue eggs" means sending eggs to another location** (a transfer the receiver confirms), one destination per entry. The older stock-out form is now "Out, no sale".
 - **Credit is a payment method on a sale** (`rpc_sale_with_credit`, `sales.credit`); credit needs the customer's name and does not reach any cash account.
 
+## Business rules (from the client, 3 Nov 2026)
+
+- **Credit paid:** `rpc_credit_paid` records a customer paying what they owe (cash, Till or Paybill), set against their oldest credit sales first (`credit_payments`). The money reaches the account through `v_money_lines` (kind `credit_paid`). The dashboard's `credits` list feeds the "Outstanding credits" card.
+- **Water drunk lowers the tank:** the tank level is the last reading less the water drunk since it (`_tank()` and the dashboard's `tank`). A new reading resets it.
+- **The activity log is ordered by the day a record is for** (`activity(..., p_cursor)`), newest day first, not by when it was entered.
+- **Skipped days:** the farm manager can enter feed used, water drunk, deaths and medicine for an earlier day, up to 62 days back (`rpc_farm_record_on`). The daily house sheet and shop sheet already take a date.
+- **Lucky Summer was a test outlet:** its records and the 3 Nov test entries were removed (migration 15).
+
 ## Open items
 
 - **Email secrets:** add these in Supabase under Edge Functions → Secrets:
@@ -78,6 +86,7 @@ Before you push, run `npm test` and `npm run build`. If you touch SQL, also run 
   - `DPV_APP_URL`
 - **Email domain:** verify a Desert Pearl domain in Resend, with SPF, DKIM and DMARC records.
 - **Staff emails:** add each person's address on the Settings → Staff screen.
+- **Tank size:** `settings.tank_capacity_l` is 1,000 L while the farm sheet showed about 3,500 L drunk per house a day. Confirm the real tank size, then record a fresh tank reading.
 - **Lay rates:** set a realistic expected lay rate for each house. Both are at 100% now, so every week reports a shortfall.
 - **Closed days:** outlets are set as closed on Sunday (`locations.closed_dow = '{7}'`). The client said they would confirm this.
 - **Later phases:** invoicing and a payment gateway are proposed, not built, and each needs its own scope agreement.

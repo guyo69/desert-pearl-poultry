@@ -66,13 +66,14 @@ export function cashDay(D: Dashboard, acc: string, day: string) {
   const after = sum(rows.filter((r) => r.d >= day), (r) => r.amount);
   const k = (kind: string) => sum(rows.filter((r) => r.d === day && r.kind === kind), (r) => r.amount);
   const open = balance(D, acc) - after;
-  return { open, sales: k('sale'), moveIn: k('move_in'), moveOut: -k('move_out'), fees: -k('fee'), expenses: -k('expense'),
+  return { open, sales: k('sale'), creditPaid: k('credit_paid'), moveIn: k('move_in'), moveOut: -k('move_out'), fees: -k('fee'), expenses: -k('expense'),
            variance: k('variance'), opening: k('opening'), close: balance(D, acc) - sum(rows.filter((r) => r.d > day), (r) => r.amount) };
 }
 export function salesOn(D: Dashboard, days: string[], loc?: string) {
   const set = new Set(days);
   const rows = D.sales_daily.filter((r) => set.has(r.d) && (!loc || r.location_id === loc));
   return { value: sum(rows, (r) => r.value), cash: sum(rows, (r) => r.cash), till: sum(rows, (r) => r.till), paybill: sum(rows, (r) => r.paybill),
+           credit: sum(rows, (r) => r.credit ?? Math.max(0, r.value - r.cash - r.till - r.paybill)),
            list: sum(rows, (r) => r.list_value ?? r.value),
            cnt: sum(rows, (r) => r.cnt), pcs: sum(rows, (r) => tot(r)), q: { n: sum(rows, (r) => r.n), b: sum(rows, (r) => r.b ?? 0), c: sum(rows, (r) => r.c), j: sum(rows, (r) => r.j) } };
 }
@@ -114,7 +115,8 @@ export function tankInfo(D: Dashboard) {
   if (!D.tank) return null;
   const level = D.tank.litres / cap, last7 = range(addDays(D.today, -7), addDays(D.today, -1));
   const daily = waterOn(D, last7) / 7;
-  return { litres: D.tank.litres, cap, level, band: band(level), at: D.tank.recorded_at, daily, cover: daily > 0 ? D.tank.litres / daily : null };
+  return { litres: D.tank.litres, reading: D.tank.reading ?? D.tank.litres, drunk: D.tank.drunk_since ?? 0, readOn: D.tank.d,
+           cap, level, band: band(level), at: D.tank.recorded_at, daily, cover: daily > 0 ? D.tank.litres / daily : null };
 }
 /** Yesterday's intake for a house against its average over the 7 days before. */
 export function waterTrend(D: Dashboard, house: string) {

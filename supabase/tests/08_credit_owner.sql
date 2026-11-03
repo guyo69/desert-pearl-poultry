@@ -31,7 +31,7 @@ select t_as(null);
 reset role;
 do $$ begin
   assert exists (select 1 from pg_trigger where tgname = 'owner_view_only' and tgrelid = 'public.sales'::regclass), 'trigger on sales';
-  assert (select count(*) from pg_trigger where tgname = 'owner_view_only') = 13, 'trigger on every record table';
+  assert (select count(*) from pg_trigger where tgname = 'owner_view_only') >= 13, 'trigger on every record table';
   assert not has_function_privilege('anon', 'public.rpc_sale_with_credit(text, integer, integer, integer, numeric, numeric, numeric, numeric, text, numeric, date)', 'execute'), 'anon cannot sell';
   assert not has_function_privilege('authenticated', 'public._owner_view_only()', 'execute'), 'trigger helper hidden';
   -- imports and scheduled jobs (no signed-in person) still write

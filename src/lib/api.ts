@@ -59,8 +59,10 @@ export interface WeeklyReport {
   insights: WeeklyInsight[];
 }
 export const loadWeeklyReport = () => rpc<WeeklyReport>('rpc_weekly_report');
-export const loadActivity = (p: { limit?: number; before?: string | null; loc?: string | null; kind?: string | null }) =>
-  rpc<ActivityRow[]>('activity', { p_limit: p.limit ?? 60, p_before: p.before ?? null, p_loc: p.loc ?? null, p_kind: p.kind ?? null });
+/** Records newest day first (by the day they are for). `after` is the last row already shown. */
+export const loadActivity = (p: { limit?: number; after?: ActivityRow | null; loc?: string | null; kind?: string | null }) =>
+  rpc<ActivityRow[]>('activity', { p_limit: p.limit ?? 60, p_before: null, p_loc: p.loc ?? null, p_kind: p.kind ?? null,
+    p_cursor: p.after ? { d: p.after.d, at: p.after.recorded_at, k: p.after.kind, id: p.after.id } : null });
 
 export type AuthState = 'none' | 'expired' | 'inactive' | 'temp_expired' | 'set_password' | 'mfa_enroll' | 'mfa_verify' | 'ready';
 export interface AuthUser { id: string; username: string; display_name: string; role: string; location_id: string | null; mfa_enabled: boolean; mfa_required: boolean; temp_expires_at: string | null }

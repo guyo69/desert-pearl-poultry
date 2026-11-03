@@ -66,10 +66,10 @@ export function ShopSteps({ D, loc }: { D: Dashboard; loc: string }) {
     aside={<button className="lnk" onClick={() => ui.openForm(shopDayForm(D, loc))}>Daily stock sheet</button>} />;
 }
 
-/** Owner and farm manager: what was not entered on the last 14 tracked days, newest first. Null while loading. */
+/** Owner and farm manager: what was not entered on the last 62 tracked days (as far back as a skipped day can be entered), newest first. Null while loading. */
 export function useGaps(version?: number): Gap[] | null {
   const [gaps, setGaps] = useState<Gap[] | null>(null);
-  useEffect(() => { loadGaps(14).then((g) => setGaps(g.slice().reverse())).catch(() => setGaps([])); }, [version]);
+  useEffect(() => { loadGaps(62).then((g) => setGaps(g.slice().reverse())).catch(() => setGaps([])); }, [version]);
   return gaps;
 }
 

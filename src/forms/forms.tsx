@@ -3,7 +3,7 @@
 import { rpc, staffAdmin } from '../lib/api';
 import { addDays, dlabel, eggs, kes, n0, pct } from '../lib/format';
 import { ITEMS, ITEM_NAME, accName, balance, band, cashAcc, collected, damagedAtFarm, dayLedger, feedInfo, hensNow, houseAge, locName, mix, priceOf, salesOn, stockNow, tankInfo, tot, waterOn } from '../lib/metrics';
-import type { Dashboard, House, Item, Medicine, Q, ScheduleItem, StaffLite, Transfer } from '../lib/types';
+import type { Credit, Dashboard, House, Item, Medicine, Q, ScheduleItem, StaffLite, Transfer } from '../lib/types';
 import type { Field, FormSpec, V } from '../ui/ui';
 
 const houseOpts = (D: Dashboard): [string, string][] => D.houses.map((h) => [h.id, h.name]);
@@ -19,6 +19,15 @@ const dateFields = (D: Dashboard, hint = 'Leave as today unless you are entering
   isMgmt(D) ? [{ type: 'date', id: 'date', label: 'Date', def, min: addDays(D.today, -62), max: D.today, hint }] : [];
 const dayOf = (D: Dashboard, v: V): string => (isMgmt(D) && v.date ? String(v.date) : D.today);
 const dateArg = (D: Dashboard, v: V) => (dayOf(D, v) === D.today ? null : dayOf(D, v));
+/** For the farm forms that record one thing: the farm manager can enter a skipped day. */
+const farmDateFields = (D: Dashboard): Field[] => (D.me.role === 'manager' ? dateFields(D, 'Leave as today, or choose a skipped day (up to 62 days back).') : []);
+/** Saves an earlier day's farm record; returns null for today so the usual form path runs. */
+async function farmOn(D: Dashboard, v: V, kind: 'feed_use' | 'water' | 'deaths' | 'med', p: Record<string, unknown>): Promise<string | null> {
+  const day = dateArg(D, v);
+  if (!day) return null;
+  await rpc('rpc_farm_record_on', { p_date: day, p_kind: kind, p });
+  return `Saved for ${dlabel(day)}.`;
+}
 const onDay = (D: Dashboard, v: V) => (dayOf(D, v) === D.today ? '' : ` for ${dlabel(dayOf(D, v))}`);
 /** Egg inputs by grade, keyed `${p}n`, `${p}b`, `${p}j`, `${p}c` (+ `${p}dmg`). */
 function gradeFields(p: string, o: { def?: Partial<Q>; dmg?: string; only?: Item[]; hint?: Partial<Record<Item, string>> } = {}): Field[] {
@@ -124,6 +133,7 @@ export function feedUseForm(D: Dashboard): FormSpec {
       { type: 'note', text: <div><span>In store: {n0(f.stockBags)} bags ({n0(f.stock)} kg) · 1 bag = {kgBag} kg</span></div> },
       { type: 'select', id: 'house', label: 'House', options: houseNameOpts(D) },
       { type: 'select', id: 'note', label: 'Feeding', options: [['Morning feed', 'Morning'], ['Afternoon feed', 'Afternoon'], ['Extra feed', 'Extra']] },
+      ...farmDateFields(D),
     ],
     calc: (v) => { const left = f.stock - kgOf(v), b = band(left / f.target); return <>
       <Row l="This entry" r={`${n0(kgOf(v))} kg`} />
@@ -131,6 +141,8 @@ export function feedUseForm(D: Dashboard): FormSpec {
       <Row l="Buffer band" r={b.label} /></>; },
     onSubmit: async (v) => {
       if (kgOf(v) <= 0) throw new Error('Enter the feed given.');
+      const back = await farmOn(D, v, 'feed_use', { kg: kgOf(v), house: v.house, note: v.note });
+      if (back) return `${back} ${n0(kgOf(v))} kg taken off the feed store.`;
       const r = await rpc<{ band_label: string; level: number; notified: boolean }>('rpc_feed', { p_kind: 'use', p_kg: kgOf(v), p_house: v.house, p_note: v.note });
       return `Saved. Feed at ${pct(r.level, 0)} of the buffer (${r.band_label}).${r.notified ? ' Farm Manager notified.' : ''}`;
     },
@@ -165,12 +177,21 @@ export function waterIntakeForm(D: Dashboard): FormSpec {
     fields: [
       { type: 'select', id: 'house', label: 'House', options: houseOpts(D) },
       { type: 'num', id: 'l', label: 'Litres', suffix: 'L' },
+      ...farmDateFields(D),
     ],
-    calc: (v) => { const h = D.houses.find((x) => x.id === v.house); const today = waterOn(D, [D.today], v.house); return h ? <Row l={`${h.name} today including this`} r={`${n0(today + v.l)} L`} /> : null; },
+    calc: (v) => {
+      const h = D.houses.find((x) => x.id === v.house), day = dayOf(D, v), t = tankInfo(D);
+      const onDayL = waterOn(D, [day], v.house), counts = !!t && (day > t.readOn || day === D.today);
+      return <>{h && <Row l={`${h.name} ${day === D.today ? 'today' : `on ${dlabel(day)}`} including this`} r={`${n0(onDayL + (v.l || 0))} L`} />}
+        {t && counts && <Row l="Tank after this" r={`${n0(Math.max(0, t.litres - (v.l || 0)))} L · ${pct(Math.max(0, t.litres - (v.l || 0)) / t.cap, 0)}`} />}</>;
+    },
     onSubmit: async (v) => {
       if (v.l <= 0) throw new Error('Enter the litres the birds drank.');
+      const back = await farmOn(D, v, 'water', { house: v.house, litres: v.l });
+      if (back) return back;
       await rpc('rpc_water', { p_kind: 'intake', p_litres: v.l, p_house: v.house });
-      return 'Water intake saved.';
+      const t = tankInfo(D);
+      return t ? `Water intake saved. Tank now about ${n0(Math.max(0, t.litres - v.l))} L.` : 'Water intake saved.';
     },
   };
 }
@@ -179,7 +200,7 @@ export function tankForm(D: Dashboard): FormSpec {
   const cap = D.settings.tank_capacity_l, t = tankInfo(D);
   return {
     title: 'Tank level',
-    fields: [{ type: 'num', id: 'l', label: 'Litres in the tank now', suffix: 'L', hint: `Tank holds ${n0(cap)} L.${t ? ` Last reading ${n0(t.litres)} L.` : ''}` }],
+    fields: [{ type: 'num', id: 'l', label: 'Litres in the tank now', suffix: 'L', hint: `Tank holds ${n0(cap)} L.${t ? ` Last reading ${n0(t.reading)} L; about ${n0(t.litres)} L now after water drunk since.` : ''}` }],
     buttons: (_v, set) => <>{[1, 0.75, 0.5, 0.25].map((p) => <button key={p} type="button" className="btn sm alt" onClick={() => set({ l: Math.round(cap * p) })}>{p === 1 ? 'Full' : `${p * 100}%`}</button>)}</>,
     calc: (v) => { const b = band(v.l / cap); return <div><span>Level</span><b style={{ color: `var(${b.color})` }}>{pct(v.l / cap, 0)} · {b.label}</b></div>; },
     onSubmit: async (v) => {
@@ -230,8 +251,10 @@ export function medForm(D: Dashboard, opts: { startNew?: boolean } = {}): FormSp
         { type: 'num', id: 'reorder', label: 'Warn when stock falls to', hint: 'Optional. The store shows it as low at this level.' },
       ] },
       { type: 'text', id: 'note', label: 'Note', placeholder: 'e.g. booster dose, supplier, vet name' },
+      ...farmDateFields(D),
     ],
     onSubmit: async (v) => {
+      if (isNew(v) && dateArg(D, v)) throw new Error('Add a new item with today\'s date, then enter the earlier day.');
       if (isNew(v)) {
         if (!String(v.name ?? '').trim()) throw new Error('Enter the name of the medicine or vaccine.');
         const category = chosenCategory(v);
@@ -242,6 +265,8 @@ export function medForm(D: Dashboard, opts: { startNew?: boolean } = {}): FormSp
         return r.created ? `${r.name} added to the store with ${n0(r.stock)} ${r.unit}.` : `${r.name} was already listed. ${n0(r.stock)} ${r.unit} in store now.`;
       }
       if (!(v.qty > 0)) throw new Error('Enter the quantity.');
+      const back = await farmOn(D, v, 'med', { medicine: Number(v.med), move: v.kind, qty: v.qty, house: v.kind === 'use' ? v.house : null, note: v.note || null });
+      if (back) return back;
       const r = await rpc<{ stock: number; low: boolean }>('rpc_med', { p_medicine: Number(v.med), p_kind: v.kind, p_qty: v.qty, p_house: v.kind === 'use' ? v.house : null, p_note: v.note || null });
       const m = D.medicines.find((x) => String(x.id) === v.med)!;
       return `${m.name}: ${n0(r.stock)} ${m.unit} left${r.low ? ', below reorder level' : ''}.`;
@@ -255,8 +280,13 @@ export const mortForm = (D: Dashboard): FormSpec => ({
     { type: 'select', id: 'house', label: 'House', options: houseOpts(D) },
     { type: 'num', id: 'n', label: 'Birds', suffix: 'birds', def: 1 },
     { type: 'select', id: 'cause', label: 'Cause', options: [['Unknown', 'Unknown'], ['Disease suspected', 'Disease suspected'], ['Weak / culled', 'Weak / culled'], ['Predator', 'Predator'], ['Injury', 'Injury'], ['Heat stress', 'Heat stress']] },
+    ...farmDateFields(D),
   ],
-  onSubmit: async (v) => { await rpc('rpc_mortality', { p_house: v.house, p_birds: v.n, p_cause: v.cause }); return 'Mortality recorded. Hen count updated.'; },
+  onSubmit: async (v) => {
+    if (!(v.n > 0)) throw new Error('Enter the number of birds.');
+    const back = await farmOn(D, v, 'deaths', { house: v.house, birds: v.n, cause: v.cause });
+    if (back) return `${back} Hen count updated from that day.`;
+    await rpc('rpc_mortality', { p_house: v.house, p_birds: v.n, p_cause: v.cause }); return 'Mortality recorded. Hen count updated.'; },
 });
 
 /* ---------------- stock movement ---------------- */
@@ -396,6 +426,39 @@ export function saleForm(D: Dashboard, loc: string): FormSpec {
       await rpc('rpc_sale_with_credit', { p_loc: loc, p_n: q.n, p_j: q.j, p_c: q.c, p_cash: v.cash, p_till: v.till, p_paybill: v.paybill, p_credit: credit,
         p_customer: String(v.customer ?? '').trim() || null, p_value: v.agreed > 0 ? v.agreed : null, p_date: dateArg(D, v) });
       return `Sale of ${kes(d)} saved${credit > 0 ? `, ${kes(credit)} on credit to ${String(v.customer).trim()}` : ''}${onDay(D, v)}.`;
+    },
+  };
+}
+
+/** A customer who bought on credit pays (part of) what they owe. Oldest credit sales are paid first. */
+export function creditPaidForm(D: Dashboard, loc: string | null, pick?: Credit): FormSpec {
+  const open = (D.credits ?? []).filter((c) => !loc || c.location_id === loc);
+  const key = (c: Credit) => `${c.location_id}|${c.customer}`;
+  const opts: [string, string][] = open.map((c) => [key(c), `${c.customer}${loc ? '' : ` · ${locName(D, c.location_id)}`} · owes ${kes(c.owed)}`]);
+  const chosen = (v: V) => open.find((c) => key(c) === v.who);
+  return {
+    title: 'Credit paid',
+    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>A customer who bought on credit pays now. The money goes into the cash drawer, Till or Paybill, and what they owe goes down.</p>,
+    fields: [
+      ...(open.length ? [{ type: 'select', id: 'who', label: 'Customer', options: opts, def: pick ? key(pick) : opts[0][0] } as Field]
+                      : [{ type: 'note', text: <div><span>No one owes anything{loc ? ' at this outlet' : ''}.</span></div> } as Field]),
+      { type: 'num', id: 'amt', label: 'Amount paid', suffix: 'KES', def: pick ? pick.owed : open[0]?.owed ?? '' },
+      { type: 'select', id: 'method', label: 'Paid by', options: [['cash', 'Cash'], ['till', 'M-Pesa Till'], ['paybill', 'M-Pesa Paybill']] },
+      ...dateFields(D, 'Leave as today unless the payment came on an earlier day.'),
+      { type: 'text', id: 'note', label: 'Note', placeholder: 'e.g. M-Pesa code' },
+    ],
+    calc: (v) => { const c = chosen(v); if (!c) return null; const left = c.owed - (v.amt || 0); return <>
+      <Row l={`${c.customer} owes`} r={kes(c.owed)} />
+      {left < 0 ? <Bad l="More than they owe" r={kes(-left)} /> : <Row l="Still owed after this" r={kes(left)} />}</>; },
+    buttons: (v, set) => { const c = chosen(v); return c ? <button type="button" className="btn sm alt" onClick={() => set({ amt: c.owed })}>Paid in full</button> : null; },
+    onSubmit: async (v) => {
+      const c = chosen(v);
+      if (!c) throw new Error('No credit to pay.');
+      if (!(v.amt > 0)) throw new Error('Enter the amount paid.');
+      if (v.amt > c.owed) throw new Error(`${c.customer} owes ${kes(c.owed)}. Enter that amount or less.`);
+      const r = await rpc<{ still_owed: number }>('rpc_credit_paid', { p_loc: c.location_id, p_customer: c.customer, p_amount: v.amt, p_method: v.method,
+        p_date: dateArg(D, v), p_note: String(v.note ?? '').trim() || null });
+      return r.still_owed > 0 ? `${kes(v.amt)} received from ${c.customer}${onDay(D, v)}. Still owes ${kes(r.still_owed)}.` : `${c.customer} has paid in full${onDay(D, v)}.`;
     },
   };
 }

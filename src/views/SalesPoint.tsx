@@ -2,12 +2,12 @@
 import { addDays, dlabel, eggs, kes, n0, range, timeOf } from '../lib/format';
 import { alertsFor, balance, cashDay, dayLedger, mix, salesOn, stockNow, tot } from '../lib/metrics';
 import type { Q } from '../lib/types';
-import { breakageForm, cashCountForm, countForm, dispatchForm, expenseForm, issueForm, moveForm, receiveForm, saleForm, shopDayForm } from '../forms/forms';
+import { breakageForm, cashCountForm, countForm, creditPaidForm, dispatchForm, expenseForm, issueForm, moveForm, receiveForm, saleForm, shopDayForm } from '../forms/forms';
 import { Icon } from '../ui/icons';
 import { useUI } from '../ui/ui';
 import { AlertList, Card, Empty, Kpi, Legend, Tile } from '../ui/widgets';
 import { PayChart } from './charts';
-import { RecordList } from './common';
+import { OutstandingCredits, RecordList } from './common';
 import { ShopSteps } from './Journey';
 import type { ViewProps } from './Management';
 
@@ -18,7 +18,7 @@ export function PosToday(p: ViewProps) {
   const it = D.transit.filter((x) => x.to_loc === loc);
   const closed = D.counts_today.some((c) => c.location_id === loc && c.kind === 'close');
   const A = alertsFor(D).filter((a) => !a.loc || a.loc === loc);
-  const credit = Math.max(0, s.value - s.cash - s.till - s.paybill);
+  const credit = s.credit;
   const bar = (k: 'cash' | 'till' | 'paybill' | 'credit', c: string) => { const v = k === 'credit' ? credit : s[k]; return s.value && v ? <span style={{ width: `${(v / s.value) * 100}%`, background: `var(${c})` }} /> : null; };
   return <>
     <ShopSteps D={D} loc={loc} />
@@ -38,12 +38,14 @@ export function PosToday(p: ViewProps) {
     <Card title="How customers paid" aside={<span className="muted">{kes(s.value)}</span>}>
       <div className="splitbar">{bar('cash', '--l-farm')}{bar('till', '--l-tuala')}{bar('paybill', '--l-van')}{bar('credit', '--l-lucky')}</div>
       <Legend items={[['--l-farm', `Cash ${n0(s.cash)}`], ['--l-tuala', `Till ${n0(s.till)}`], ['--l-van', `Paybill ${n0(s.paybill)}`], ...(credit ? [['--l-lucky', `Credit ${n0(credit)}`] as [string, string]] : [])]} /></Card>
+    {(D.credits ?? []).some((c) => c.location_id === loc) && <OutstandingCredits D={D} loc={loc} limit={4} />}
     <div className="tiles">
       <Tile icon="receipt" label="Record sale" color="--l-farm" onClick={() => ui.openForm(saleForm(D, loc))} />
       <Tile icon="inbox" label="Receive stock" color="--info" onClick={() => it[0] ? ui.openForm(receiveForm(D, it[0])) : ui.toast('No deliveries waiting for you.')} />
       <Tile icon="truck" label="Issue eggs" color="--l-tuala" onClick={() => ui.openForm(dispatchForm(D, loc))} />
       <Tile icon="crack" label="Damaged eggs" color="--f-none" onClick={() => ui.openForm(breakageForm(D, loc))} />
       <Tile icon="list" label="Daily stock sheet" color="--l-rayan" onClick={() => ui.openForm(shopDayForm(D, loc))} />
+      <Tile icon="cash" label="Credit paid" color="--l-farm" onClick={() => ui.openForm(creditPaidForm(D, loc))} />
       <Tile icon="wallet" label="Expense" color="--l-lucky" onClick={() => ui.openForm(expenseForm(D, loc, false))} />
       <Tile icon="swap" label="Move money" color="--l-rayan" onClick={() => ui.openForm(moveForm(D, loc))} />
       <Tile icon="count" label={closed ? 'Closed ✓' : 'Close the day'} color="--l-van" onClick={() => ui.openForm(countForm(D, loc, 'close'))} />
@@ -83,13 +85,14 @@ export function PosSales(p: ViewProps) {
 
 export function PosMoney(p: ViewProps) {
   const { D, version } = p, ui = useUI(), loc = myLoc(p), acc = `CASH:${loc}`, c = cashDay(D, acc, D.today), s = salesOn(D, [D.today], loc);
-  const match = s.value === s.cash + s.till + s.paybill;
+  const match = Math.round(s.value) === Math.round(s.cash + s.till + s.paybill + s.credit);
   const counted = D.cash_counts_today.filter((x) => x.location_id === loc).pop();
   return <>
     <Card title="Cash drawer today" aside={<span className="muted">{D.locations.find((l) => l.id === loc)?.name}</span>}>
       <div className="recon">
         <div><span>Opening cash</span><span>{kes(c.open)}</span></div>
         <div><span>+ Cash sales</span><span>{kes(c.sales)}</span></div>
+        {c.creditPaid !== 0 && <div><span>+ Credit paid in cash</span><span>{kes(c.creditPaid)}</span></div>}
         <div><span>+ Money moved in (e.g. Paybill withdrawn to cash)</span><span>{kes(c.moveIn)}</span></div>
         <div><span>− Money moved out (banked, sent to Paybill)</span><span>{kes(-c.moveOut)}</span></div>
         <div><span>− Charges</span><span>{kes(-c.fees)}</span></div>
@@ -104,9 +107,11 @@ export function PosMoney(p: ViewProps) {
     <Card title="Sales vs payments">
       <div className="recon"><div><span>Egg sales today</span><span>{kes(s.value)}</span></div><div><span>Cash</span><span>{kes(s.cash)}</span></div>
         <div><span>M-Pesa Till</span><span>{kes(s.till)}</span></div><div><span>M-Pesa Paybill</span><span>{kes(s.paybill)}</span></div>
-        <div className="tot"><span>Total received</span><span>{kes(s.cash + s.till + s.paybill)}</span></div></div>
-      <div className={`ok-line ${match ? 'sev-ok' : 'sev-red'}`}><Icon name={match ? 'check' : 'alert'} />{match ? 'Every sale is fully paid and allocated.' : 'Payments do not match sales.'}</div></Card>
-    <Card title="Money records"><RecordList D={D} version={version} loc={loc} kinds={['money', 'cash']} canVoid={false} limit={25} /></Card>
+        {s.credit > 0 && <div><span>On credit (pays later)</span><span>{kes(s.credit)}</span></div>}
+        <div className="tot"><span>Total received and on credit</span><span>{kes(s.cash + s.till + s.paybill + s.credit)}</span></div></div>
+      <div className={`ok-line ${match ? 'sev-ok' : 'sev-red'}`}><Icon name={match ? 'check' : 'alert'} />{match ? 'Every sale is paid or on credit to a named customer.' : 'Payments do not match sales.'}</div></Card>
+    <OutstandingCredits D={D} loc={loc} />
+    <Card title="Money records"><RecordList D={D} version={version} loc={loc} kinds={['money', 'cash', 'credit']} canVoid={false} limit={25} /></Card>
     {s.cnt === 0 && c.moveIn === 0 && c.moveOut === 0 && <Empty>No money activity yet today.</Empty>}
   </>;
 }
