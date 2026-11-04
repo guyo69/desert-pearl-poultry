@@ -4,7 +4,7 @@ import { rpc } from '../lib/api';
 import { addDays, daysBetween, dlabel, eggs, n0, pct, range } from '../lib/format';
 import { canEnter, collected, damagedAtFarm, deaths, hensNow, houseAge, layRate, mix, produced, stockNow, tankInfo, waterFeedRatio, waterOn, waterTrend } from '../lib/metrics';
 import {
-  collectForm, confirmIssueForm, dispatchForm, feedInForm, feedUseForm, houseDayForm, medForm, medicineForm, mortForm, scheduleForm, storeFeedInForm, storeFeedIssueForm,
+  collectForm, confirmIssueForm, dispatchForm, feedInForm, feedUseForm, houseDayForm, medForm, millForm, medicineForm, mortForm, scheduleForm, storeFeedInForm, storeFeedIssueForm,
   storeMedInForm, storeMedIssueForm, tankForm, waterIntakeForm,
 } from '../forms/forms';
 import type { Dashboard } from '../lib/types';
@@ -14,6 +14,7 @@ import { Card, Delta, Empty, FeedCard, Seg, TankCard, Tile } from '../ui/widgets
 import { FeedStockChart, FeedUseChart, TankChart, WaterChart, houseColor } from './charts';
 import { RecordList } from './common';
 import { ClerkSteps } from './Journey';
+import { MillCard } from './Mill';
 import type { ViewProps } from './Management';
 
 export function ClerkHome({ D, version, go }: ViewProps) {
@@ -69,22 +70,24 @@ export function StorePending({ D }: { D: Dashboard }) {
 
 /** Feed buttons by role: the store receives and issues; the farm manager can also record use directly. */
 function feedActions(D: Dashboard, ui: ReturnType<typeof useUI>) {
-  if (D.me.role === 'store') return <><button className="btn sm" onClick={() => ui.openForm(storeFeedIssueForm(D))}><Icon name="scoop" />Issue to a house</button>
+  const mill = (D.raw ?? []).length > 0 && canEnter(D) ? <button className="btn sm alt" onClick={() => ui.openForm(millForm(D))}><Icon name="pulse" />Feed milled</button> : null;
+  if (D.me.role === 'store') return <><button className="btn sm" onClick={() => ui.openForm(storeFeedIssueForm(D))}><Icon name="scoop" />Issue to a house</button>{mill}
     <button className="btn sm alt" onClick={() => ui.openForm(storeFeedInForm(D))}><Icon name="sack" />Feed received</button></>;
   if (D.me.role === 'manager') return <><button className="btn sm" onClick={() => ui.openForm(storeFeedIssueForm(D))}><Icon name="scoop" />Issue to a house</button>
     <button className="btn sm alt" onClick={() => ui.openForm(feedInForm(D))}><Icon name="sack" />Feed received</button>
-    <button className="btn sm alt" onClick={() => ui.openForm(feedUseForm(D))}><Icon name="list" />Feed used (no confirm)</button></>;
+    <button className="btn sm alt" onClick={() => ui.openForm(feedUseForm(D))}><Icon name="list" />Feed used (no confirm)</button>{mill}</>;
   return undefined;
 }
 
-export function Feed({ D, version }: ViewProps) {
+export function Feed({ D, version, go }: ViewProps) {
   const ui = useUI();
   return <>
     <StorePending D={D} />
     <FeedCard D={D} actions={feedActions(D, ui)} />
     <Card title="Feed in store" aside={<span className="muted">shaded by buffer band</span>}><FeedStockChart D={D} /></Card>
     <Card title="Daily use vs plan"><FeedUseChart D={D} /></Card>
-    <Card title="Feed records"><RecordList D={D} version={version} kinds={['feed']} canVoid={false} limit={20} /></Card>
+    {(D.raw ?? []).length > 0 && (D.me.role !== 'clerk') && <MillCard D={D} compact go={go} />}
+    <Card title="Feed records"><RecordList D={D} version={version} kinds={['feed', 'mill']} canVoid={false} limit={20} /></Card>
   </>;
 }
 

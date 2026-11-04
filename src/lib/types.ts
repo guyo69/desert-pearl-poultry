@@ -15,6 +15,8 @@ export interface Location { id: string; name: string; short: string; kind: 'farm
 export interface Account { id: string; name: string; kind: 'cash' | 'till' | 'paybill' | 'bank'; location_id: string | null; sort: number }
 export interface House { id: string; name: string; birds_at_start: number; start_date: string; age_weeks_at_start: number; expected_lay: number; active: boolean; sort: number }
 export interface Medicine { id: number; name: string; category: string; unit: string; reorder: number; active: boolean; stock: number }
+/** A raw material of the farm's feed mill: kg in each tonne of feed (the recipe) and kg in the store. */
+export interface RawMaterial { id: number; name: string; per_tonne: number; bag_kg: number; active: boolean; sort: number; stock: number }
 export interface Supply { id: number; name: string; category: string; unit: string; reorder: number; active: boolean; stock: number }
 /** Feed or medicine the store issued to a house, waiting for the production clerk to confirm. */
 export interface StorePending { kind: 'feed' | 'med'; id: number; d: string; recorded_at: string; house: string; house_id: string | null; what: string; qty: number; unit: string; by_name: string | null }
@@ -64,11 +66,13 @@ export interface Dashboard {
   credits?: Credit[];
   /** the farm store (absent on an older server) */
   supplies?: Supply[]; store_pending?: StorePending[];
+  /** the feed mill (absent on an older server) */
+  raw?: RawMaterial[]; mill_daily?: { d: string; tonnes: number; batches: number }[];
   notifications: Notice[];
 }
 
 export interface ActivityRow {
-  kind: 'collect' | 'mort' | 'feed' | 'water' | 'med' | 'xfer' | 'sale' | 'brk' | 'count' | 'issue' | 'money' | 'cash' | 'credit' | 'supply' | 'confirm';
+  kind: 'collect' | 'mort' | 'feed' | 'water' | 'med' | 'xfer' | 'sale' | 'brk' | 'count' | 'issue' | 'money' | 'cash' | 'credit' | 'supply' | 'confirm' | 'raw' | 'mill';
   id: number; d: string; recorded_at: string; by_name: string | null; by_role: Role | null;
   location_id: string | null; voided: boolean; data: Record<string, any>;
 }

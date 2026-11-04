@@ -45,8 +45,8 @@ export function MonthBooks({ D }: { D: Dashboard }) {
   };
   const thisMonth = D.today.slice(0, 8) + '01';
   const yest = new Date(`${D.today}T00:00:00Z`); yest.setUTCDate(yest.getUTCDate() - 1);
-  return <Card title="Monthly outlet workbooks">
-    <p className="muted" style={{ margin: '0 0 10px', fontSize: 13.5 }}>The Daily Outlet Report for every outlet, one row a day, filled in from what the outlets entered. Stock, sales by payment mode, credit and the balance checks. The current month fills in as the outlets close each day.</p>
+  return <Card title="Monthly workbooks">
+    <p className="muted" style={{ margin: '0 0 10px', fontSize: 13.5 }}>The Daily Outlet Report for every outlet, one row a day, filled in from what the outlets entered. Stock, sales by payment mode, credit and the balance checks. A Store ledger tab follows the inventory clerk's ledger for the raw materials, and a Feed tab shows feed milled, bought and given to each house. The current month fills in as the outlets close each day.</p>
     {first === null ? <div className="spinner" /> : <div className="list">{monthsFrom(first, D.today).map((m) => (
       <div className="li" key={m}>
         <span className="av" style={{ background: 'var(--l-farm)' }}><Icon name="list" /></span>

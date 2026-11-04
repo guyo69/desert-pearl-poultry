@@ -15,6 +15,7 @@ const META: Record<ActivityRow['kind'], { icon: string; col: string }> = {
   sale: { icon: 'receipt', col: '--l-farm' }, brk: { icon: 'crack', col: '--f-none' }, count: { icon: 'count', col: '--l-rayan' },
   money: { icon: 'swap', col: '--l-lucky' }, cash: { icon: 'cash', col: '--l-lucky' }, issue: { icon: 'truck', col: '--l-lucky' },
   credit: { icon: 'wallet', col: '--l-farm' }, supply: { icon: 'box', col: '--l-tuala' }, confirm: { icon: 'check', col: '--f-full' },
+  raw: { icon: 'sack', col: '--info' }, mill: { icon: 'scoop', col: '--f-full' },
 };
 const PAID_BY: Record<string, string> = { cash: 'Cash', till: 'M-Pesa Till', paybill: 'M-Pesa Paybill' };
 const q = (x: any, p = '') => ({ n: +x[`${p}n`] || 0, b: +x[`${p}b`] || 0, c: +x[`${p}c`] || 0, j: +x[`${p}j`] || 0 });
@@ -48,6 +49,11 @@ export function describe(D: Dashboard, r: ActivityRow): { title: string; sub: st
     case 'confirm': return { title: `${x.house ?? 'House'} received ${x.what === 'feed' ? 'feed' : x.what ?? ''}`,
       sub: +x.received < +x.issued ? `${n0(+x.issued - +x.received)} ${x.unit ?? ''} short of what the store issued${x.note ? ` · ${x.note}` : ''}` : 'All of it arrived',
       end: `${n0(+x.received)} of ${n0(+x.issued)} ${x.unit ?? ''}` };
+    case 'mill': return { title: `Feed milled · ${+x.tonnes} tonne${+x.tonnes === 1 ? '' : 's'}`,
+      sub: `${x.bags != null ? `${n0(+x.bags)} bags into the feed store` : 'Into the feed store'}${x.note ? ` · ${x.note}` : ''}`, end: `+${n0(+x.tonnes * 1000)} kg` };
+    case 'raw': return x.kind === 'count'
+      ? { title: `${x.material} counted`, sub: `${Math.abs(+x.kg) < 0.5 ? 'Matched the book' : `${+x.kg > 0 ? '+' : '−'}${n0(Math.abs(+x.kg))} kg against the book`}${x.note ? ` · ${x.note}` : ''}`, end: `${n0(+x.counted)} kg` }
+      : { title: `${x.material} received`, sub: `${n0(+x.kg / (+x.bag_kg || 50))} bags${x.note ? ` · ${x.note}` : ''}`, end: `+${n0(+x.kg)} kg` };
     default: return { title: 'Record', sub: '', end: '' };
   }
 }

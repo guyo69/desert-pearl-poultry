@@ -47,7 +47,7 @@ describe('monthly outlet workbook', () => {
   });
   it('writes a workbook with a summary and one tab per outlet, formulas and their values', () => {
     const { bytes, filename } = buildMonthBook(book);
-    expect(filename).toBe('Desert Pearl outlets October 2026 to 2026-10-03.xlsx');
+    expect(filename).toBe('Desert Pearl October 2026 to 2026-10-03.xlsx');
     const files = unzipSync(bytes);
     const wb = strFromU8(files['xl/workbook.xml']);
     expect(wb).toContain('name="Summary"');
@@ -79,4 +79,50 @@ describe('the van in the monthly workbook', () => {
     expect(l.notes.join()).toMatch(/60 eggs still on board/);
     expect(dayLine({ ...r, sent: 300 }, '2026-11-03', 30, true).notes.join()).toMatch(/ended the day empty/);
   });
+});
+
+describe('the store ledger and feed in the monthly workbook', () => {
+  // 28 and 29 Oct shaped like the inventory clerk's ledger (maize and macropack)
+  const mill: MonthBook = {
+    ...book, month: '2026-11-01', from: '2026-11-01', to: '2026-11-04', today: '2026-11-04',
+    materials: [
+      { id: 1, name: 'Maize', per_tonne: 533, bag_kg: 50, active: true, open: 0, close: 10463 },
+      { id: 7, name: 'Macropack', per_tonne: 15, bag_kg: 25, active: true, open: 900, close: 750 },
+    ],
+    ledger: [
+      { d: '2026-11-02', material_id: 1, tonnes: 5, opening: 0, purchase: 13128, used: 2665, adjust: 0 },
+      { d: '2026-11-02', material_id: 7, tonnes: 5, opening: 900, purchase: 0, used: 75, adjust: 0 },
+      { d: '2026-11-03', material_id: 1, tonnes: 0, opening: 10463, purchase: 0, used: 0, adjust: 0 },
+      { d: '2026-11-03', material_id: 7, tonnes: 0, opening: 825, purchase: 0, used: 0, adjust: -75 },
+    ],
+    feed: [{ d: '2026-11-02', milled: 5000, bought: 0, used: 1200, houses: { 'House A': 700, 'House B': 500 }, adjust: 0, eggs: 9000 }],
+    houses: ['House A', 'House B'], feed_open: 400, feed_bag_kg: 50,
+  };
+  const { bytes } = buildMonthBook(mill);
+  const files = unzipSync(bytes);
+  const wb = strFromU8(files['xl/workbook.xml']);
+  it('adds a Store ledger and a Feed tab', () => {
+    expect(wb).toContain('name="Store ledger"');
+    expect(wb).toContain('name="Feed"');
+  });
+  const sheetOf = (n: string) => { const i = [...wb.matchAll(/<sheet name="([^"]+)"/g)].findIndex((m) => m[1] === n); return strFromU8(files[`xl/worksheets/sheet${i + 1}.xml`]); };
+  it('carries each material from its previous closing and adds up the month with formulas that cover every row', () => {
+    const s = sheetOf('Store ledger');
+    expect(s).toContain('<f>SUM($C$14:$C$17)</f>');                 // tonnes milled: every ledger row
+    expect(s).toContain('<f>SUMIF($B$14:$B$17,$A8,$E$14:$E$17)</f>');
+    expect(s).toContain('<f>H14</f>');                              // maize on 3 Nov opens with its 2 Nov closing
+    expect(s).toContain('<f>D14+N(E14)-N(F14)+N(G14)</f>');
+    expect(s).toMatch(/<c r="A5"[^>]*><f>SUM\(\$C\$14:\$C\$17\)<\/f><v>5<\/v>/);   // milled once that day, not once per material
+    expect(s).toContain('Store counted');
+  });
+  it('lays out feed by house with the store running on', () => {
+    const s = sheetOf('Feed');
+    expect(s).toContain('Given to House A (kg)');
+    expect(s).toContain('<f>$D$3+N(B6)+N(C6)-N(F6)+N(G6)</f><v>4200</v>');
+    expect(s).toMatch(/<f>IF\(N\(J6\)&gt;0,F6\*1000\/J6,&quot;&quot;\)<\/f><v>133\.3/);
+  });
+  it('stays out of a workbook from an older server', () => {
+    expect(strFromU8(unzipSync(buildMonthBook(book).bytes)['xl/workbook.xml'])).not.toContain('Store ledger');
+  });
+  if (process.env.DPV_WRITE_MILL) { import('node:fs').then((fs) => fs.writeFileSync(process.env.DPV_WRITE_MILL!, bytes)); }
 });

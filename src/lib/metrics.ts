@@ -102,6 +102,35 @@ export function feedInfo(D: Dashboard) {
   return { stock, target, level, band: b, daily, cover, shortKg, bags, noneDate: addDays(D.today, Math.floor(toNone)), usedToday: feedUsed(D, [D.today]), estimated: used7 <= 0,
            stockBags: stock / s.bag_kg, targetBags: s.feed_buffer_bags ?? target / s.bag_kg, dailyBags: daily / s.bag_kg };
 }
+/* ---------------- the feed mill ---------------- */
+/**
+ * The raw material store against the recipe: how many tonnes of feed it can
+ * mill now, which material runs out first, and how many days that lasts at the
+ * recent milling rate (the last 7 days, else the last 30, else 5 tonnes a day).
+ */
+export function millInfo(D: Dashboard) {
+  const mats = (D.raw ?? []).filter((m) => m.active).sort((a, b) => a.sort - b.sort || a.id - b.id);
+  const used = mats.filter((m) => Number(m.per_tonne) > 0);
+  const recipeKg = sum(mats, (m) => m.per_tonne);
+  const each = used.map((m) => ({ ...m, tonnes: Math.max(0, Number(m.stock)) / Number(m.per_tonne) }));
+  const limit = each.length ? each.reduce((a, b) => (b.tonnes < a.tonnes ? b : a)) : null;
+  const milled = (n: number) => sum((D.mill_daily ?? []).filter((x) => x.d >= addDays(D.today, -n) && x.d < D.today), (x) => x.tonnes);
+  const t7 = milled(7), t30 = milled(30);
+  const rate = t7 > 0 ? t7 / 7 : t30 > 0 ? t30 / 30 : 0;
+  const biggest = Math.max(0, ...(D.mill_daily ?? []).filter((x) => x.d >= addDays(D.today, -30)).map((x) => Number(x.tonnes)));
+  const batch = biggest > 0 ? biggest : 5;
+  const cap = limit ? limit.tonnes : 0;
+  return {
+    mats, each, limit, cap, recipeKg, recipeOk: Math.abs(recipeKg - 1000) < 0.001, rate, batch, t7,
+    todayTonnes: sum((D.mill_daily ?? []).filter((x) => x.d === D.today), (x) => x.tonnes),
+    days: rate > 0 ? cap / rate : null, started: mats.some((m) => Number(m.stock) !== 0) || (D.mill_daily ?? []).length > 0,
+  };
+}
+/** kg of each raw material a milling of `tonnes` takes, and any shortfall. */
+export function millNeeds(D: Dashboard, tonnes: number) {
+  return millInfo(D).each.map((m) => ({ ...m, need: m.per_tonne * tonnes, short: Math.max(0, m.per_tonne * tonnes - Math.max(0, m.stock)) }));
+}
+
 /** Feed in store at the end of each day. */
 export function feedHistory(D: Dashboard, days: string[]) {
   return days.map((day) => D.feed_stock - sum(D.feed_daily.filter((r) => r.d > day), (r) => r.kg));

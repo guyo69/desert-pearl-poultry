@@ -15,7 +15,15 @@ export interface MonthBook {
   month: string; from: string; to: string; today: string; first_month: string; generated_at: string; tray: number;
   locations: { id: string; name: string; short: string; kind?: string }[];
   rows: BookRow[];
+  /** the feed mill (absent on an older server) */
+  materials?: { id: number; name: string; per_tonne: number; bag_kg: number; active: boolean; open: number; close: number }[];
+  ledger?: LedgerRow[];
+  feed?: FeedRow[]; houses?: string[]; feed_open?: number; feed_bag_kg?: number;
 }
+/** One raw material on one day it moved (kg). `tonnes` is everything milled that day. */
+export interface LedgerRow { d: string; material_id: number; tonnes: number; opening: number; purchase: number; used: number; adjust: number }
+/** Feed on one day (kg): milled on the farm, bought in, given to houses (by house name), store adjustments, and eggs collected. */
+export interface FeedRow { d: string; milled: number; bought: number; used: number; houses: Record<string, number>; adjust: number; eggs: number }
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -170,8 +178,14 @@ export function buildMonthBook(b: MonthBook): { bytes: Uint8Array; filename: str
     totals.push({ name: names[i + 1], row: o.total, lines });
   });
   sheets.unshift(summarySheet(b, month, sub, totals));
-  return { bytes: xlsx(sheets, { title: `Desert Pearl outlets · ${month}`, creator: 'Desert Pearl Poultry Manager' }),
-           filename: `Desert Pearl outlets ${month}${isCurrent ? ` to ${b.today}` : ''}.xlsx` };
+  if (b.materials) {
+    const subFarm = isCurrent ? `Filled in from the app as the farm enters it, to today. Made ${madeAt}.` : `The whole month as entered in the app. Made ${madeAt}.`;
+    const [ln, fn] = sheetNames([...names, 'Store ledger', 'Feed']).slice(-2);
+    sheets.push(ledgerSheet(b, ln, `Store ledger · ${month}`, subFarm));
+    sheets.push(feedSheet(b, fn, `Feed · ${month}`, subFarm));
+  }
+  return { bytes: xlsx(sheets, { title: `Desert Pearl · ${month}`, creator: 'Desert Pearl Poultry Manager' }),
+           filename: `Desert Pearl ${month}${isCurrent ? ` to ${b.today}` : ''}.xlsx` };
 }
 
 function addDay(iso: string, n: number) { const t = new Date(`${iso}T00:00:00Z`); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); }
@@ -214,4 +228,134 @@ function summarySheet(b: MonthBook, month: string, sub: string, totals: { name: 
   rows.push([]);
   rows.push([{ v: 'Each outlet has its own tab with one row per day, laid out like the Daily Outlet Report. A day is blank when nothing was entered, or when today has not been closed yet.', s: S.note }]);
   return { name: 'Summary', rows, widths: heads.map((h) => h[3]), freeze: 'B5', heights: { 1: 24, 2: 30, 4: 46, [z + 3]: 30 }, merges: [`A1:${col(n - 1)}1`, `A2:${col(n - 1)}2`, `A${z + 3}:${col(n - 1)}${z + 3}`] };
+}
+
+/* ---------------- the farm: store ledger and feed ---------------- */
+/**
+ * The inventory clerk's stock ledger: a summary per raw material for the month
+ * (KPIs that cover every row), then one row per material per day it moved.
+ * Closing = Opening + Purchase - Used + Count adjustment; each opening after the
+ * first is the same material's previous closing, so the sheet carries itself.
+ */
+export function ledgerSheet(b: MonthBook, name: string, title: string, sub: string): Sheet {
+  const mats = (b.materials ?? []).filter((m) => m.active || m.open || m.close || (b.ledger ?? []).some((l) => l.material_id === m.id));
+  const lines = [...(b.ledger ?? [])].sort((x, y) => x.d.localeCompare(y.d) || mats.findIndex((m) => m.id === x.material_id) - mats.findIndex((m) => m.id === y.material_id));
+  const nameOf = (id: number) => mats.find((m) => m.id === id)?.name ?? `Material ${id}`;
+  const bagOf = (id: number) => mats.find((m) => m.id === id)?.bag_kg ?? 50;
+  const W = 11;
+  const rows: (Cell | null)[][] = [
+    [{ v: title, s: S.title }, ...Array(W - 1).fill({ s: S.title })],
+    [{ v: sub, s: S.note }],
+    [],
+  ];
+  // the daily ledger starts below the material summary
+  const sumHead = 7, sumFirst = sumHead + 1, sumLast = sumHead + Math.max(mats.length, 1);
+  const dHead = sumLast + 4, dFirst = dHead + 1, dLast = dHead + Math.max(lines.length, 1);
+  const L = { date: 'A', mat: 'B', t: 'C', open: 'D', buy: 'E', used: 'F', adj: 'G', close: 'H', bag: 'I', bags: 'J', note: 'K' };
+  const rng = (c: string) => `$${c}$${dFirst}:$${c}$${dLast}`;
+  const tonnes = lines.reduce((a, l, i) => a + (i === 0 || lines[i - 1].d !== l.d ? Number(l.tonnes) : 0), 0);
+  const usedKg = lines.reduce((a, l) => a + Number(l.used), 0), boughtKg = lines.reduce((a, l) => a + Number(l.purchase), 0);
+  const closeKg = mats.reduce((a, m) => a + Number(m.close), 0);
+  // KPIs: rows 4 to 6
+  rows.push([{ v: 'Tonnes milled', s: S.head }, { v: 'Raw material used (kg)', s: S.head }, { v: 'Raw material bought (kg)', s: S.head },
+             { v: 'In store at month end (kg)', s: S.head }, { v: 'Raw materials', s: S.head }]);
+  rows.push([{ f: `SUM(${rng(L.t)})`, v: tonnes, s: S.totTrays }, { f: `SUM(${rng(L.used)})`, v: usedKg, s: S.totMoney },
+             { f: `SUM(${rng(L.buy)})`, v: boughtKg, s: S.totMoney }, { f: `SUM(F${sumFirst}:F${sumLast})`, v: closeKg, s: S.totMoney },
+             { f: `COUNTA(A${sumFirst}:A${sumLast})`, v: mats.length, s: S.totInt }]);
+  rows.push([]);
+  // material summary
+  rows.push(['Raw material', 'Opening at month start (kg)', 'Bought (kg)', 'Used (kg)', 'Count adjustments (kg)', 'Closing at month end (kg)', 'Bags remaining', 'kg in a tonne of feed', 'Tonnes it can mill']
+    .map((h) => ({ v: h, s: S.head })));
+  mats.forEach((m, i) => {
+    const R = sumFirst + i, my = lines.filter((l) => l.material_id === m.id);
+    const add = (f: (l: LedgerRow) => number) => my.reduce((a, l) => a + Number(f(l)), 0);
+    const crit = `$A${R}`;
+    rows.push([
+      { v: m.name, s: S.text }, { v: Number(m.open), s: S.inMoney },
+      { f: `SUMIF(${rng(L.mat)},${crit},${rng(L.buy)})`, v: add((l) => l.purchase), s: S.autoMoney },
+      { f: `SUMIF(${rng(L.mat)},${crit},${rng(L.used)})`, v: add((l) => l.used), s: S.autoMoney },
+      { f: `SUMIF(${rng(L.mat)},${crit},${rng(L.adj)})`, v: add((l) => l.adjust), s: S.autoMoney },
+      { f: `B${R}+C${R}-D${R}+E${R}`, v: Number(m.close), s: S.autoMoney },
+      { f: `F${R}/${Number(m.bag_kg) || 50}`, v: Number(m.close) / (Number(m.bag_kg) || 50), s: S.autoTrays },
+      { v: Number(m.per_tonne), s: S.inMoney },
+      { f: `IF(H${R}>0,MAX(F${R},0)/H${R},"")`, v: Number(m.per_tonne) > 0 ? Math.max(Number(m.close), 0) / Number(m.per_tonne) : '', s: S.autoTrays },
+    ]);
+  });
+  if (!mats.length) rows.push([{ v: 'No raw materials set up', s: S.text }]);
+  rows.push([]);
+  rows.push([{ v: 'Every day a raw material moved', s: S.group }, ...Array(W - 1).fill({ s: S.group })]);
+  rows.push([]);
+  rows.push(['Date', 'Raw material', 'Tonnes milled that day', 'Opening (kg)', 'Purchase (kg)', 'Used (kg)', 'Count adjustment (kg)', 'Closing (kg) (auto)', 'Bag size (kg)', 'Bags remaining (auto)', 'Notes']
+    .map((h) => ({ v: h, s: S.head })));
+  const lastRow: Record<number, number> = {};
+  lines.forEach((l, i) => {
+    const R = dFirst + i, first = i === 0 || lines[i - 1].d !== l.d, prev = lastRow[l.material_id];
+    const close = Number(l.opening) + Number(l.purchase) - Number(l.used) + Number(l.adjust);
+    const notes = [first && Number(l.tonnes) ? `${Number(l.tonnes)} t milled` : '', Number(l.adjust) ? 'Store counted' : ''].filter(Boolean).join('. ');
+    rows.push([
+      { v: serial(l.d), s: S.date }, { v: nameOf(l.material_id), s: S.text },
+      first ? { v: Number(l.tonnes) || null, s: S.inTrays } : { s: S.autoTrays },
+      prev ? { f: `H${prev}`, v: Number(l.opening), s: S.autoMoney } : { v: Number(l.opening), s: S.inMoney },
+      { v: Number(l.purchase) || null, s: S.inMoney }, { v: Number(l.used) || null, s: S.inMoney }, { v: Number(l.adjust) || null, s: S.inMoney },
+      { f: `D${R}+N(E${R})-N(F${R})+N(G${R})`, v: close, s: S.autoMoney },
+      { v: bagOf(l.material_id), s: S.inMoney }, { f: `IF(I${R}>0,H${R}/I${R},"")`, v: close / bagOf(l.material_id), s: S.autoTrays },
+      { v: notes, s: S.text },
+    ]);
+    lastRow[l.material_id] = R;
+  });
+  if (!lines.length) rows.push([{ v: 'No raw material moved this month', s: S.text }]);
+  rows.push([]);
+  rows.push([{ v: 'Yellow: what the inventory clerk entered in the app (deliveries, millings and counts). Used is worked out by the app from the recipe in force on the day of each milling. Grey: worked out by the sheet. Closing = Opening + Purchase - Used + Count adjustment; a count adjustment is what was counted less what the book said. Each opening is the same material\'s previous closing.', s: S.note }]);
+  const noteRow = rows.length;
+  return { name, rows, widths: [13, 20, 12, 13, 13, 13, 13, 14, 10, 12, 30], heights: { 1: 24, 2: 30, 4: 32, [sumHead]: 46, [dHead]: 46, [noteRow]: 44 },
+    merges: [`A1:${col(W - 1)}1`, `A2:${col(W - 1)}2`, `A${dHead - 2}:${col(W - 1)}${dHead - 2}`, `A${noteRow}:${col(W - 1)}${noteRow}`] };
+}
+
+/** Feed each day: milled on the farm, bought, given to each house, what is left in the feed store, and the feed per egg. */
+export function feedSheet(b: MonthBook, name: string, title: string, sub: string): Sheet {
+  const lines = b.feed ?? [];
+  const houses = [...(b.houses ?? [])];
+  for (const l of lines) for (const h of Object.keys(l.houses ?? {})) if (!houses.includes(h)) houses.push(h);
+  const bag = Number(b.feed_bag_kg) || 50;
+  const heads = ['Date', 'Milled on the farm (kg)', 'Bought in (kg)', ...houses.map((h) => `Given to ${h} (kg)`), 'Feed used (kg) (auto)', 'Store adjustment (kg)',
+                 'Feed in store at day end (kg) (auto)', `Bags in store (${bag} kg) (auto)`, 'Eggs collected', 'Feed per egg (g) (auto)'];
+  const n = heads.length, H = houses.length;
+  const c = { date: 0, milled: 1, bought: 2, house0: 3, used: 3 + H, adj: 4 + H, store: 5 + H, bags: 6 + H, eggs: 7 + H, per: 8 + H };
+  const rows: (Cell | null)[][] = [
+    [{ v: title, s: S.title }, ...Array(n - 1).fill({ s: S.title })],
+    [{ v: sub, s: S.note }],
+    [{ v: 'Feed in store at the start of the month (kg)', s: S.totLabel }, null, null, { v: Number(b.feed_open ?? 0), s: S.inMoney }],
+    [],
+    heads.map((h) => ({ v: h, s: S.head })),
+  ];
+  const FIRST = 6, OPEN = `$D$3`;
+  let store = Number(b.feed_open ?? 0);
+  lines.forEach((l, i) => {
+    const R = FIRST + i, C = (k: number) => `${col(k)}${R}`;
+    const used = Number(l.used); store += Number(l.milled) + Number(l.bought) - used + Number(l.adjust);
+    const prev = i === 0 ? OPEN : `${col(c.store)}${R - 1}`;
+    rows.push([
+      { v: serial(l.d), s: S.date }, { v: Number(l.milled) || null, s: S.inMoney }, { v: Number(l.bought) || null, s: S.inMoney },
+      ...houses.map((h) => ({ v: Number(l.houses?.[h] ?? 0) || null, s: S.inMoney })),
+      H ? { f: `SUM(${C(c.house0)}:${col(c.house0 + H - 1)}${R})`, v: used, s: S.autoMoney } : { v: used, s: S.autoMoney },
+      { v: Number(l.adjust) || null, s: S.inMoney },
+      { f: `${prev}+N(${C(c.milled)})+N(${C(c.bought)})-N(${C(c.used)})+N(${C(c.adj)})`, v: store, s: S.autoMoney },
+      { f: `${C(c.store)}/${bag}`, v: store / bag, s: S.autoTrays },
+      { v: Number(l.eggs) || null, s: S.inMoney },
+      { f: `IF(N(${C(c.eggs)})>0,${C(c.used)}*1000/${C(c.eggs)},"")`, v: Number(l.eggs) > 0 ? used * 1000 / Number(l.eggs) : '', s: S.autoTrays },
+    ]);
+  });
+  const last = FIRST + Math.max(lines.length, 1) - 1;
+  if (!lines.length) rows.push([{ v: 'No feed recorded this month', s: S.text }]);
+  const sumOf = (k: number, v: number): Cell => ({ f: `SUM(${col(k)}${FIRST}:${col(k)}${last})`, v, s: S.totMoney });
+  const tot = (f: (l: FeedRow) => number) => lines.reduce((a, l) => a + Number(f(l)), 0);
+  const eggsT = tot((l) => l.eggs), usedT = tot((l) => l.used), T = last + 1;
+  rows.push([{ v: 'Month total', s: S.totLabel }, sumOf(c.milled, tot((l) => l.milled)), sumOf(c.bought, tot((l) => l.bought)),
+    ...houses.map((h, j) => sumOf(c.house0 + j, tot((l) => l.houses?.[h] ?? 0))), sumOf(c.used, usedT), sumOf(c.adj, tot((l) => l.adjust)),
+    { f: lines.length ? `${col(c.store)}${last}` : OPEN, v: store, s: S.totMoney }, { f: `${col(c.store)}${T}/${bag}`, v: store / bag, s: S.totTrays },
+    sumOf(c.eggs, eggsT), { f: `IF(${col(c.eggs)}${T}>0,${col(c.used)}${T}*1000/${col(c.eggs)}${T},"")`, v: eggsT > 0 ? usedT * 1000 / eggsT : '', s: S.totTrays }]);
+  rows.push([]);
+  rows.push([{ v: 'Yellow: what was entered in the app. Milled is the feed made from the store ledger\'s raw materials; given to a house is what the store issued or the farm manager recorded. Grey: worked out by the sheet. Feed per egg is the grams of feed used for each good egg collected that day.', s: S.note }]);
+  return { name, rows, widths: [13, 13, 12, ...houses.map(() => 13), 13, 12, 15, 12, 12, 12], freeze: `B${FIRST}`, heights: { 1: 24, 2: 30, 5: 58, [T + 2]: 32 },
+    merges: [`A1:${col(n - 1)}1`, `A2:${col(n - 1)}2`, `A3:C3`, `A${T + 2}:${col(n - 1)}${T + 2}`] };
 }

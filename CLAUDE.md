@@ -82,9 +82,19 @@ Before you push, run `npm test` and `npm run build`. If you touch SQL, also run 
 - **The van (location kind `van`) has no counts.** It loads (receives), delivers to the farm or outlets, sells, and must end the day empty (drop what is left with Deliver eggs). `completeness()` checks "eggs left on the van" instead of opening and closing counts. The driver banks or sends the cash.
 - **Lucky Summer was a test outlet:** its records and the 3 Nov test entries were removed (migration 15).
 
+## Business rules (from the client, 4 Nov 2026)
+
+- **The farm mills its own layers feed** (from the inventory clerk's stock ledger). `raw_materials` holds the list and the recipe in kg per tonne of feed; the materials in use must add up to 1,000 kg. The farm's recipe is seeded: Maize 533, Wheat bran 180, Soybean 130, Sunflower cake 50, Limestone (white) 50, Chick grit 42, Macropack 15.
+- **`rpc_mill(action, p, date)`** (inventory clerk and farm manager): `raw_in` (a delivery, bags or kg), `mill` (tonnes mixed: takes each material by the recipe into `raw_moves` kind `mill`, records a `mill_batches` row with the recipe used, and adds tonnes x 1,000 kg to `feed_moves` as kind `in`), `raw_count` (what was counted; the difference from the book is a `count` move). Milling is refused when any material is short, naming it.
+- **`rpc_recipe_save(rows)`** (owner and farm manager) saves the list and recipe together. A change applies to the next milling; each batch keeps its own recipe.
+- **Screens:** the Feed mill tab (store, manager, owner) shows what the store can mill, which material runs out first, the recipe and the mill records. Activity kinds `mill` and `raw`; feed made by milling shows as the milling, not as a feed delivery.
+- **Monthly workbook:** `rpc_month_book` also returns `materials`, `ledger` (per material per day it moved: opening, purchase, used, count adjustment, tonnes), `feed` (per day: milled, bought, used by house, adjustment, eggs), `houses`, `feed_open` and `feed_bag_kg`. `monthBook.ts` adds a Store ledger tab in the clerk's layout (closing = opening + purchase - used + adjustment, each opening linked to the previous closing, month KPIs over every row) and a Feed tab.
+- **Store morning reminder** also names the raw material that limits milling when the store cannot make a usual batch (the biggest in the last 30 days, else 5 tonnes).
+
 ## Open items
 
 - **Tank size:** `settings.tank_capacity_l` is 1,000 L while the farm sheet showed about 3,500 L drunk per house a day. Confirm the real tank size, then record a fresh tank reading.
 - **Lay rates:** set a realistic expected lay rate for each house. Both are at 100% now, so every week reports a shortfall.
 - **Closed days:** outlets are set as closed on Sunday (`locations.closed_dow = '{7}'`). The client said they would confirm this.
+- **Raw material opening stock:** the app's raw store starts empty. The inventory clerk should count each material once (Count the store) to bring in the ledger's closing stock. The paper ledger's 3 Nov wheat bran opening (6,390 kg) did not follow from the 29 Oct closing (1,273 kg); 5,117 kg was not recorded as a delivery.
 - **Later phases:** invoicing and a payment gateway are proposed, not built, and each needs its own scope agreement.

@@ -12,6 +12,7 @@ import { Alerts, Money, Overview, Report, Stock, type ViewProps } from './views/
 import { ClerkHome, Feed, Health, Records, Water } from './views/Farm';
 import { PosMoney, PosSales, PosStock, PosToday } from './views/SalesPoint';
 import { StoreHome, StoreItems, StoreRecords } from './views/Store';
+import { Mill } from './views/Mill';
 import { Account, Setup } from './views/Settings';
 import { NoticeList } from './views/common';
 
@@ -25,6 +26,7 @@ const TABS: Record<string, Tab> = {
   setup: { label: 'Activity', icon: 'list', view: (p) => <Setup {...p} /> },
   home: { label: 'Home', icon: 'dash', view: (p) => <ClerkHome {...p} /> },
   feed: { label: 'Feed', icon: 'sack', view: (p) => <Feed {...p} /> },
+  mill: { label: 'Feed mill', icon: 'scoop', view: (p) => <Mill {...p} /> },
   water: { label: 'Water', icon: 'drop', view: (p) => <Water {...p} /> },
   health: { label: 'Flock health', icon: 'syringe', view: (p) => <Health {...p} /> },
   records: { label: 'Records', icon: 'list', view: (p) => <Records {...p} /> },
@@ -39,10 +41,10 @@ const TABS: Record<string, Tab> = {
 };
 /** First five go in the bottom bar on phones; all appear in the side rail and menu. */
 const ROLE_TABS: Record<Role, string[]> = {
-  owner: ['ov', 'stock', 'money', 'report', 'setup', 'alerts', 'feed', 'water', 'health'],
-  manager: ['alerts', 'ov', 'stock', 'report', 'health', 'feed', 'water', 'money', 'records', 'setup'],
+  owner: ['ov', 'stock', 'money', 'report', 'setup', 'alerts', 'feed', 'mill', 'water', 'health'],
+  manager: ['alerts', 'ov', 'stock', 'report', 'health', 'feed', 'mill', 'water', 'money', 'records', 'setup'],
   clerk: ['home', 'feed', 'water', 'health', 'records', 'me'],
-  store: ['store', 'feed', 'meds', 'srecords', 'me'],
+  store: ['store', 'mill', 'feed', 'meds', 'srecords', 'me'],
   pos: ['today', 'pstock', 'psales', 'pmoney', 'me'],
 };
 const ROLE_NAME: Record<Role, string> = { owner: 'Owner', manager: 'Farm Manager', clerk: 'Production Clerk', store: 'Inventory Clerk', pos: 'Sales point' };

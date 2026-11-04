@@ -2,8 +2,8 @@
 // function behind it re-checks everything, so these checks are for speed only.
 import { rpc, staffAdmin } from '../lib/api';
 import { addDays, dlabel, eggs, kes, n0, pct } from '../lib/format';
-import { ITEMS, ITEM_NAME, isVan, accName, balance, band, cashAcc, collected, damagedAtFarm, dayLedger, feedInfo, hensNow, houseAge, locName, mix, priceOf, salesOn, stockNow, tankInfo, tot, waterOn } from '../lib/metrics';
-import type { Credit, Dashboard, House, Item, Medicine, Q, ScheduleItem, StaffLite, StorePending, Supply, Transfer } from '../lib/types';
+import { ITEMS, ITEM_NAME, isVan, accName, balance, band, cashAcc, collected, damagedAtFarm, dayLedger, feedInfo, hensNow, houseAge, locName, millInfo, millNeeds, mix, priceOf, salesOn, stockNow, tankInfo, tot, waterOn } from '../lib/metrics';
+import type { Credit, Dashboard, House, Item, Medicine, Q, RawMaterial, ScheduleItem, StaffLite, StorePending, Supply, Transfer } from '../lib/types';
 import type { Field, FormSpec, V } from '../ui/ui';
 
 const houseOpts = (D: Dashboard): [string, string][] => D.houses.map((h) => [h.id, h.name]);
@@ -466,6 +466,124 @@ export const supplyForm = (_D: Dashboard, x: Supply): FormSpec => ({
     return 'Saved.';
   },
 });
+
+/* ---------------- the feed mill ---------------- */
+const mill = (action: string, p: Record<string, unknown>, day: string | null) =>
+  rpc<Record<string, any>>('rpc_mill', { p_action: action, p, p_date: day });
+const rawOpts = (D: Dashboard, all = false): [string, string][] => (D.raw ?? []).filter((m) => all || m.active)
+  .sort((a, b) => a.sort - b.sort || a.id - b.id).map((m) => [String(m.id), `${m.name} (${n0(m.stock)} kg)`]);
+const rawOf = (D: Dashboard, id: unknown) => (D.raw ?? []).find((m) => String(m.id) === String(id));
+const tns = (t: number) => `${(Math.round(t * 100) / 100).toLocaleString('en-KE', { maximumFractionDigits: 2 })} tonne${t === 1 ? '' : 's'}`;
+
+/** A delivery of a raw material, in bags of its usual size plus any loose kg. */
+export function rawInForm(D: Dashboard, m?: RawMaterial): FormSpec {
+  const kgOf = (v: V) => { const x = rawOf(D, v.mat); return (v.bags || 0) * (x?.bag_kg ?? 50) + (v.kg || 0); };
+  return {
+    title: 'Raw material received',
+    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Count the bags as they come off the lorry. Payment is recorded by the farm manager.</p>,
+    fields: [
+      ...dateFields(D),
+      { type: 'select', id: 'mat', label: 'Raw material', options: rawOpts(D), def: m ? String(m.id) : undefined },
+      { type: 'pair', fields: [{ type: 'num', id: 'bags', label: 'Bags', suffix: 'bags' }, { type: 'num', id: 'kg', label: 'Plus loose', suffix: 'kg' }] },
+      { type: 'text', id: 'note', label: 'Supplier or delivery note (optional)', placeholder: 'e.g. maize from Isiolo, note 118' },
+    ],
+    calc: (v) => { const x = rawOf(D, v.mat); if (!x) return null; return <>
+      <Row l="This delivery" r={`${n0(kgOf(v))} kg${v.bags ? ` (bags of ${n0(x.bag_kg)} kg)` : ''}`} />
+      <Row l={`${x.name} in store after this`} r={`${n0(x.stock + kgOf(v))} kg · ${n0((x.stock + kgOf(v)) / x.bag_kg)} bags`} /></>; },
+    onSubmit: async (v) => {
+      if (!v.mat) throw new Error('Choose the raw material.');
+      if (kgOf(v) <= 0) throw new Error('Enter the bags or kg received.');
+      const r = await mill('raw_in', { material: Number(v.mat), kg: kgOf(v), note: String(v.note ?? '').trim() || null }, dateArg(D, v));
+      return `${n0(r.kg)} kg of ${r.name} received${onDay(D, v)}.`;
+    },
+  };
+}
+
+/** Feed milled: the recipe takes each raw material out of the store and the feed goes into the feed store in bags. */
+export function millForm(D: Dashboard): FormSpec {
+  const info = millInfo(D), bagKg = D.settings.bag_kg;
+  return {
+    title: 'Feed milled',
+    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Enter the tonnes mixed. The recipe works out what each raw material used, and the feed goes into the feed store.
+      {info.limit ? ` The store can make ${tns(Math.floor(info.cap * 10) / 10)} now.` : ''}</p>,
+    fields: [
+      ...dateFields(D),
+      { type: 'num', id: 't', label: 'Tonnes mixed', suffix: 'tonnes', step: 0.5, def: info.cap >= info.batch ? info.batch : '' },
+      { type: 'text', id: 'note', label: 'Note (optional)', placeholder: 'e.g. layers mash, second mixing' },
+    ],
+    calc: (v) => {
+      if (!info.recipeOk) return <Bad l="The recipe" r={`adds up to ${n0(info.recipeKg)} kg, not 1,000. The farm manager fixes it under Feed mill.`} />;
+      if (!(v.t > 0)) return null;
+      const need = millNeeds(D, v.t), short = need.filter((x) => x.short > 0);
+      return <>
+        {need.map((x) => x.short > 0 ? <Bad key={x.id} l={x.name} r={`needs ${n0(x.need)} kg, ${n0(Math.max(0, x.stock))} in store`} />
+          : <Row key={x.id} l={x.name} r={`${n0(x.need)} kg of ${n0(x.stock)}`} />)}
+        {short.length ? <Bad l="Not enough in the store" r="Record the delivery or count the store first" />
+          : <Row l="Into the feed store" r={`${n0(v.t * 1000)} kg · ${n0(v.t * 1000 / bagKg)} bags of ${n0(bagKg)} kg`} />}</>;
+    },
+    onSubmit: async (v) => {
+      if (!(v.t > 0)) throw new Error('Enter the tonnes mixed.');
+      const r = await mill('mill', { tonnes: v.t, note: String(v.note ?? '').trim() || null }, dateArg(D, v));
+      return `${tns(v.t)} milled${onDay(D, v)}: ${n0(r.bags)} bags into the feed store.`;
+    },
+  };
+}
+
+/** A count of what is really in the raw material store. The difference from the book is recorded, the book follows the count. */
+export function rawCountForm(D: Dashboard, m?: RawMaterial): FormSpec {
+  const kgOf = (v: V) => { const x = rawOf(D, v.mat); return (v.bags || 0) * (x?.bag_kg ?? 50) + (v.kg || 0); };
+  return {
+    title: 'Count the raw material store',
+    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Count full bags and weigh any loose material. The app records the difference from its book.</p>,
+    fields: [
+      ...dateFields(D),
+      { type: 'select', id: 'mat', label: 'Raw material', options: rawOpts(D, true), def: m ? String(m.id) : undefined },
+      { type: 'pair', fields: [{ type: 'num', id: 'bags', label: 'Full bags', suffix: 'bags' }, { type: 'num', id: 'kg', label: 'Plus loose', suffix: 'kg' }] },
+      { type: 'text', id: 'note', label: 'Note (needed if it differs)', placeholder: 'e.g. two bags torn, rats' },
+    ],
+    calc: (v) => { const x = rawOf(D, v.mat); if (!x) return null; const d = kgOf(v) - x.stock; return <>
+      <Row l="The book says" r={`${n0(x.stock)} kg`} /><Row l="Counted" r={`${n0(kgOf(v))} kg`} />
+      {Math.abs(d) < 0.5 ? <Ok>Matches the book</Ok> : <Bad l="Difference" r={`${d > 0 ? '+' : ''}${n0(d)} kg`} />}</>; },
+    onSubmit: async (v) => {
+      const x = rawOf(D, v.mat);
+      if (!x) throw new Error('Choose the raw material.');
+      if (Math.abs(kgOf(v) - x.stock) >= 0.5 && !String(v.note ?? '').trim()) throw new Error('Say why the count differs from the book.');
+      const r = await mill('raw_count', { material: x.id, counted_kg: kgOf(v), note: String(v.note ?? '').trim() || null }, dateArg(D, v));
+      return Math.abs(r.difference) < 0.5 ? `${x.name} matches the book.` : `${x.name} counted: ${r.difference > 0 ? '+' : ''}${n0(r.difference)} kg against the book.`;
+    },
+  };
+}
+
+/** The raw material list and the recipe (kg per tonne), saved together; the materials in use must add up to 1,000 kg. */
+export function recipeForm(D: Dashboard): FormSpec {
+  const mats = [...(D.raw ?? [])].sort((a, b) => a.sort - b.sort || a.id - b.id);
+  const EXTRA = ['x1', 'x2'];
+  const rows = (v: V) => [
+    ...mats.map((m) => ({ id: m.id as number | undefined, name: String(v[`n${m.id}`] ?? '').trim(), per_tonne: +v[`k${m.id}`] || 0, bag_kg: +v[`b${m.id}`] || 0, active: v[`a${m.id}`] === 'true' })),
+    ...EXTRA.map((k) => ({ id: undefined, name: String(v[`n${k}`] ?? '').trim(), per_tonne: +v[`k${k}`] || 0, bag_kg: +v[`b${k}`] || 50, active: true })).filter((r) => r.name),
+  ];
+  const total = (v: V) => rows(v).filter((r) => r.active).reduce((a, r) => a + r.per_tonne, 0);
+  const block = (k: string | number, m?: RawMaterial): Field[] => [
+    { type: 'text', id: `n${k}`, label: m ? 'Name' : 'New raw material (optional)', def: m?.name ?? '', placeholder: m ? undefined : 'e.g. Fish meal' },
+    { type: 'pair', fields: [{ type: 'num', id: `k${k}`, label: 'kg in a tonne of feed', suffix: 'kg', def: m ? m.per_tonne : '' },
+      { type: 'num', id: `b${k}`, label: 'Bag size', suffix: 'kg', def: m ? m.bag_kg : 50 }] },
+    ...(m ? [{ type: 'select', id: `a${k}`, label: 'In use', options: [['true', 'Yes'], ['false', 'No longer used']], def: String(m.active) } as Field] : []),
+  ];
+  return {
+    title: 'Feed recipe',
+    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>The kg of each raw material in one tonne of feed. Every milling uses this recipe, and the materials in use must add up to 1,000 kg. Earlier millings keep the recipe they used.</p>,
+    fields: [...mats.flatMap((m) => [{ type: 'note', text: <b>{m.name}</b> } as Field, ...block(m.id, m)]), ...EXTRA.flatMap((k) => block(k))],
+    calc: (v) => { const t = total(v); return Math.abs(t - 1000) < 0.001 ? <Ok>Adds up to 1,000 kg a tonne</Ok>
+      : <Bad l="The recipe adds up to" r={`${n0(t)} kg. ${t > 1000 ? `Take off ${n0(t - 1000)} kg` : `Add ${n0(1000 - t)} kg`}`} />; },
+    onSubmit: async (v) => {
+      const r = rows(v);
+      if (r.some((x) => !x.name)) throw new Error('Every raw material needs a name.');
+      if (Math.abs(total(v) - 1000) >= 0.001) throw new Error(`The recipe adds up to ${n0(total(v))} kg. It must be 1,000 kg a tonne.`);
+      await rpc('rpc_recipe_save', { p_rows: r.map((x) => (x.id ? x : { name: x.name, per_tonne: x.per_tonne, bag_kg: x.bag_kg, active: true })) });
+      return 'Recipe saved. The next milling uses it.';
+    },
+  };
+}
 
 /** The production clerk confirms what a house received from the store. */
 export function confirmIssueForm(_D: Dashboard, x: StorePending): FormSpec {

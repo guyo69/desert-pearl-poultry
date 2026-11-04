@@ -78,3 +78,10 @@ export function HouseLayChart({ D }: { D: Dashboard }) {
     refLines={D.houses.map((h, i) => ({ value: h.expected_lay * 100, label: `${h.name} expected`, color: houseColor(i) }))}
     format={(v) => `${v.toFixed(1)}%`} tick={(v) => `${v}%`} />;
 }
+
+export function MillChart({ D }: { D: Dashboard }) {
+  const days = allDays(D);
+  return <TimeChart label="Feed milled" days={days} summary="sum" unit="tonnes" height={200}
+    series={[{ key: 'mill', label: 'Tonnes milled', color: '--f-full', values: days.map((d) => (D.mill_daily ?? []).filter((x) => x.d === d).reduce((a, x) => a + Number(x.tonnes), 0)) }]}
+    format={tr} />;
+}

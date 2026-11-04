@@ -4,12 +4,13 @@ import { useState } from 'react';
 import { n0 } from '../lib/format';
 import { feedInfo } from '../lib/metrics';
 import type { Dashboard } from '../lib/types';
-import { storeFeedInForm, storeFeedIssueForm, storeMedInForm, storeMedIssueForm, supplyForm, supplyInForm, supplyOutForm } from '../forms/forms';
+import { storeFeedInForm, storeFeedIssueForm, millForm, rawInForm, storeMedInForm, storeMedIssueForm, supplyForm, supplyInForm, supplyOutForm } from '../forms/forms';
 import { Icon } from '../ui/icons';
 import { useUI } from '../ui/ui';
 import { Card, Empty, FeedCard, Seg, Tile } from '../ui/widgets';
 import { RecordList } from './common';
 import { MedicineStore, StorePending } from './Farm';
+import { MillCard } from './Mill';
 import type { ViewProps } from './Management';
 
 export function StoreHome({ D, version, go }: ViewProps) {
@@ -19,6 +20,8 @@ export function StoreHome({ D, version, go }: ViewProps) {
   return <>
     <div className="tiles">
       <Tile icon="scoop" label="Issue feed" color="--f-low" onClick={() => ui.openForm(storeFeedIssueForm(D))} />
+      {(D.raw ?? []).length > 0 && <Tile icon="pulse" label="Feed milled" color="--f-full" onClick={() => ui.openForm(millForm(D))} />}
+      {(D.raw ?? []).length > 0 && <Tile icon="truck" label="Raw material received" color="--l-lucky" onClick={() => ui.openForm(rawInForm(D))} />}
       <Tile icon="sack" label="Feed received" color="--l-lucky" onClick={() => ui.openForm(storeFeedInForm(D))} />
       <Tile icon="syringe" label="Issue medicine" color="--l-rayan" onClick={() => ui.openForm(storeMedIssueForm(D))} />
       <Tile icon="inbox" label="Medicine received" color="--info" onClick={() => ui.openForm(storeMedInForm(D))} />
@@ -26,6 +29,7 @@ export function StoreHome({ D, version, go }: ViewProps) {
       <Tile icon="truck" label="Supplies received" color="--l-farm" onClick={() => ui.openForm(supplyInForm(D))} />
     </div>
     <StorePending D={D} />
+    <MillCard D={D} compact go={go} />
     <FeedCard D={D} actions={<><button className="btn sm" onClick={() => ui.openForm(storeFeedIssueForm(D))}><Icon name="scoop" />Issue to a house</button>
       <button className="btn sm alt" onClick={() => ui.openForm(storeFeedInForm(D))}><Icon name="sack" />Feed received</button></>} />
     {(lowMeds.length > 0 || lowSup.length > 0) && <Card title="Running low" aside={<button className="lnk" onClick={() => go('meds')}>Store items</button>}>
@@ -36,7 +40,7 @@ export function StoreHome({ D, version, go }: ViewProps) {
           <div className="end">{n0(x.stock)} {x.unit}</div></div>)}</div></Card>}
     {f.stock <= 0 && <div className="banner warn"><div><b>The feed book shows no feed</b><p>Record the bags in the store with Feed received so the book matches what is there.</p></div></div>}
     <Card title="Recent store records" aside={<button className="lnk" onClick={() => go('srecords')}>All records</button>}>
-      <RecordList D={D} version={version} kinds={['feed', 'med', 'supply', 'confirm']} canVoid={false} limit={12} /></Card>
+      <RecordList D={D} version={version} kinds={['feed', 'mill', 'raw', 'med', 'supply', 'confirm']} canVoid={false} limit={12} /></Card>
   </>;
 }
 
@@ -66,9 +70,9 @@ export function StoreItems({ D }: ViewProps) {
   return <><MedicineStore D={D} mgmt={D.me.role === 'owner' || D.me.role === 'manager'} /><Supplies D={D} /></>;
 }
 
-const KINDS: [string, string][] = [['all', 'All'], ['feed', 'Feed'], ['med', 'Medicine'], ['supply', 'Supplies'], ['confirm', 'Confirmed']];
+const KINDS: [string, string][] = [['all', 'All'], ['feed', 'Feed'], ['mill', 'Milling'], ['raw', 'Raw materials'], ['med', 'Medicine'], ['supply', 'Supplies'], ['confirm', 'Confirmed']];
 export function StoreRecords({ D, version }: ViewProps) {
   const [k, setK] = useState('all');
   return <Card title="Store records" aside={<Seg value={k} options={KINDS} onChange={setK} />}>
-    <RecordList D={D} version={version} kinds={k === 'all' ? ['feed', 'med', 'supply', 'confirm'] : [k]} canVoid={false} limit={k === 'all' ? 60 : 30} /></Card>;
+    <RecordList D={D} version={version} kinds={k === 'all' ? ['feed', 'mill', 'raw', 'med', 'supply', 'confirm'] : [k]} canVoid={false} limit={k === 'all' ? 60 : 30} /></Card>;
 }
