@@ -7,7 +7,7 @@ import type { ActivityRow, Dashboard } from '../lib/types';
 import { creditPaidForm, voidForm } from '../forms/forms';
 import { Icon } from '../ui/icons';
 import { useUI } from '../ui/ui';
-import { Card, Empty, sevVar } from '../ui/widgets';
+import { Card, Empty, SkelList, sevVar } from '../ui/widgets';
 
 const META: Record<ActivityRow['kind'], { icon: string; col: string }> = {
   collect: { icon: 'egg', col: '--l-van' }, feed: { icon: 'sack', col: '--f-low' }, water: { icon: 'drop', col: '--info' },
@@ -16,6 +16,7 @@ const META: Record<ActivityRow['kind'], { icon: string; col: string }> = {
   money: { icon: 'swap', col: '--l-lucky' }, cash: { icon: 'cash', col: '--l-lucky' }, issue: { icon: 'truck', col: '--l-lucky' },
   credit: { icon: 'wallet', col: '--l-farm' }, supply: { icon: 'box', col: '--l-tuala' }, confirm: { icon: 'check', col: '--f-full' },
   raw: { icon: 'sack', col: '--info' }, mill: { icon: 'scoop', col: '--f-full' },
+  flock: { icon: 'bird', col: '--l-van' },
 };
 const PAID_BY: Record<string, string> = { cash: 'Cash', till: 'M-Pesa Till', paybill: 'M-Pesa Paybill' };
 const q = (x: any, p = '') => ({ n: +x[`${p}n`] || 0, b: +x[`${p}b`] || 0, c: +x[`${p}c`] || 0, j: +x[`${p}j`] || 0 });
@@ -49,6 +50,9 @@ export function describe(D: Dashboard, r: ActivityRow): { title: string; sub: st
     case 'confirm': return { title: `${x.house ?? 'House'} received ${x.what === 'feed' ? 'feed' : x.what ?? ''}`,
       sub: +x.received < +x.issued ? `${n0(+x.issued - +x.received)} ${x.unit ?? ''} short of what the store issued${x.note ? ` · ${x.note}` : ''}` : 'All of it arrived',
       end: `${n0(+x.received)} of ${n0(+x.issued)} ${x.unit ?? ''}` };
+    case 'flock': return { title: `New flock in ${x.house}${x.breed ? ` · ${x.breed}` : ''}`,
+      sub: `${+x.age_weeks} weeks old when placed · expected lay ${Math.round(+x.expected_lay * 100)}%${x.ended_on ? ` · left ${dlabel(x.ended_on)}${x.end_note ? ` (${x.end_note})` : ''}` : ''}${x.note ? ` · ${x.note}` : ''}`,
+      end: `${n0(+x.hens)} hens` };
     case 'mill': return { title: `Feed milled · ${+x.tonnes} tonne${+x.tonnes === 1 ? '' : 's'}`,
       sub: `${x.bags != null ? `${n0(+x.bags)} bags into the feed store` : 'Into the feed store'}${x.note ? ` · ${x.note}` : ''}`, end: `+${n0(+x.tonnes * 1000)} kg` };
     case 'raw': return x.kind === 'count'
@@ -90,7 +94,7 @@ export function RecordList({ D, version, loc, kinds, canVoid, limit = 30 }: { D:
     setRows([...rows, ...r]); setMore(r.length === limit);
   };
   if (err) return <Empty>{err}</Empty>;
-  if (!rows) return <div className="center" style={{ minHeight: 120 }}><div className="spinner" /></div>;
+  if (!rows) return <SkelList n={Math.min(limit, 5)} />;
   const shown = kinds && kinds.length > 1 ? rows.filter((r) => kinds.includes(r.kind)) : rows;
   if (!shown.length) return <Empty>Nothing recorded yet.</Empty>;
   const out: React.ReactNode[] = [];

@@ -450,3 +450,77 @@ tfoot td{font-weight:700;border-top:.5px solid var(--line-strong);border-bottom:
 .steps .mid small { color: var(--muted); font-size: 13px; }
 .steps .tick svg { width: 15px; height: 15px; }
 .sheet-line { display: contents; }
+
+/* ===================================================================
+   5 Nov 2026: readable dropdowns, boxed actions, skeletons and motion
+   =================================================================== */
+:root{color-scheme:light}
+/* native dropdown lists take the app's colours, so options never show white on white */
+select,select option,select optgroup{background-color:var(--surface);color:var(--fg)}
+.inp select{background-color:transparent}
+.inp select option:checked{background-color:var(--surface-2);color:var(--fg)}
+.inp:hover{box-shadow:inset 0 0 0 1px var(--line-strong)}
+
+/* every text action is a button with a box, not bare green text */
+.card-h .lnk,.lnk{display:inline-flex;align-items:center;gap:6px;background:var(--tint);color:var(--accent);border:0;border-radius:9px;
+  padding:6px 12px;min-height:32px;font-size:14px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;
+  transition:background .18s,transform .15s var(--ease),box-shadow .18s}
+.lnk:hover{background:color-mix(in srgb,var(--accent) 22%,transparent);box-shadow:0 1px 0 color-mix(in srgb,var(--accent) 25%,transparent)}
+.lnk:active{opacity:1;transform:scale(.96)}
+.lnk:disabled{opacity:.45;pointer-events:none}
+.li .act{display:inline-flex;align-items:center;background:var(--tint);color:var(--accent);border:0;border-radius:8px;padding:5px 11px;margin-top:5px;
+  font-size:13.5px;font-weight:600;transition:background .18s,transform .15s var(--ease)}
+.li .act:hover{background:color-mix(in srgb,var(--accent) 22%,transparent)}
+.li .act:active{transform:scale(.95)}
+.li .act:disabled{opacity:.45;pointer-events:none}
+.row-btns{align-items:center}
+
+/* loading skeletons */
+.skel{display:block;flex:none;max-width:100%;border-radius:6px;background:linear-gradient(90deg,var(--fill) 0%,var(--fill-2) 40%,var(--fill) 80%);
+  background-size:300% 100%;animation:shimmer 1.3s ease-in-out infinite}
+@keyframes shimmer{from{background-position:100% 0}to{background-position:-100% 0}}
+.li .mid .skel+.skel{margin-top:7px}
+.skel-tile{pointer-events:none}
+.boot{min-height:100vh}
+.boot-bar{display:flex;align-items:center;gap:12px;height:52px;padding:0 16px;border-bottom:.5px solid var(--line);background:var(--bar-bg)}
+.boot-mark{display:flex;gap:8px}
+.boot-mark span{width:10px;height:10px;border-radius:50%;background:var(--accent);animation:dot 1s var(--ease) infinite}
+.boot-mark span:nth-child(2){animation-delay:.15s}.boot-mark span:nth-child(3){animation-delay:.3s}
+@keyframes dot{0%,80%,100%{opacity:.25;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+
+/* motion: rows ease in, hover shows what is clickable, presses give way */
+.list>.li{animation:rowIn .32s var(--ease) both}
+.list>.li:nth-child(2){animation-delay:.03s}.list>.li:nth-child(3){animation-delay:.06s}.list>.li:nth-child(4){animation-delay:.09s}
+.list>.li:nth-child(5){animation-delay:.12s}.list>.li:nth-child(6){animation-delay:.15s}.list>.li:nth-child(n+7){animation-delay:.18s}
+@keyframes rowIn{from{opacity:0;transform:translateY(4px)}}
+.card{transition:box-shadow .25s var(--ease)}
+.tile{transition:transform .2s var(--ease),box-shadow .2s}
+.btn{transition:transform .15s var(--ease),filter .2s,background .2s,box-shadow .2s}
+.seg button{transition:background .2s var(--ease),box-shadow .2s,color .2s,transform .12s var(--ease)}
+.seg button:active{transform:scale(.96)}
+.iconbtn,.rail button,.drawer nav button{transition:background .18s,transform .15s var(--ease),color .18s}
+.rail button:active,.drawer nav button:active{transform:scale(.98)}
+.sheet .x,.sheet button{transition:background .18s,transform .15s var(--ease),filter .2s}
+@media (hover:hover){
+  .tile:hover{transform:translateY(-2px);box-shadow:var(--shadow-lift)}
+  .btn:hover{filter:brightness(1.06);box-shadow:0 4px 14px color-mix(in srgb,var(--accent) 28%,transparent)}
+  .btn.alt:hover{box-shadow:none;background:color-mix(in srgb,var(--accent) 20%,transparent)}
+  .seg button:not([aria-pressed="true"]):hover{background:color-mix(in srgb,var(--surface) 60%,transparent)}
+  tbody tr{transition:background .15s}
+  tbody tr:hover{background:var(--fill)}
+}
+
+/* the weekly report */
+.rep{display:flex;flex-direction:column;gap:16px}
+.rep-eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;color:var(--accent)}
+.rep h2{margin-top:6px}
+.rep-meta{display:flex;flex-wrap:wrap;gap:8px 22px;margin:12px 0 4px;padding:10px 0;border-top:.5px solid var(--line);border-bottom:.5px solid var(--line);font-size:14px}
+.rep-meta span{display:flex;flex-direction:column;min-width:0}
+.rep-meta b{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+.rep .lead+.lead{margin-top:6px}
+.finding b .area{font-style:normal;font-size:11.5px;font-weight:600;color:var(--muted);background:var(--fill);border-radius:6px;padding:2px 7px;margin-left:8px;vertical-align:2px;white-space:nowrap}
+.finding .todo{display:flex;gap:6px;align-items:flex-start;margin-top:6px;color:var(--fg);font-size:14px;font-weight:500}
+.finding .todo svg{width:16px;height:16px;color:var(--accent);flex:none;margin-top:2px;stroke-width:2.4}
+.rep-note{font-size:12.5px;color:var(--muted);margin:10px 0 0;max-width:90ch}
+.cov{height:8px;border-radius:99px;background:var(--fill);overflow:hidden;margin:0 0 12px}
+.cov span{display:block;height:100%;border-radius:99px;background:var(--f-watch);transition:width .6s var(--ease)}

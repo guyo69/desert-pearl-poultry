@@ -1,5 +1,5 @@
 // Owner and Farm Manager screens: overview, alerts, stock, money, report.
-import { addDays, dlabel, dnum, dshort, eggs, kes, kesS, n0, pct, range } from '../lib/format';
+import { addDays, dlabel, dnum, eggs, kes, kesS, n0, pct, range } from '../lib/format';
 import {
   alertsFor, canEnter, closedToday, mix, produced, balance, collected, dayLedger, feedInfo, hensNow, intelligence, layRate, outletLoss, salesOn, stockNow, tankInfo, tot,
   totalFunds, waterOn, waterTrend,
@@ -9,11 +9,13 @@ import { feedInForm, moveForm, receiveForm, tankForm, expenseForm } from '../for
 import { Icon } from '../ui/icons';
 import { useUI } from '../ui/ui';
 import { useEffect, useState } from 'react';
-import { loadWeeklyReport, type WeeklyInsight, type WeeklyReport } from '../lib/api';
-import { AlertList, BarList, Card, Delta, Empty, FeedCard, Kpi, LocDot, TankCard, sevClass, sevVar } from '../ui/widgets';
+import { loadWeeklyReport, type WeeklyReport } from '../lib/api';
+import { AlertList, BarList, Card, Delta, Empty, FeedCard, Kpi, LocDot, Skel, SkelList, TankCard, sevClass, sevVar } from '../ui/widgets';
 import { HouseLayChart, PayChart, ProductionChart, SalesChart, WaterChart, houseColor } from './charts';
 import { NoticeList, OutstandingCredits } from './common';
 import { MonthBooks } from './MonthBooks';
+import { buildWeekReport } from '../lib/report';
+import { GUIDE } from '../lib/knowledge';
 import { MissingDays, gapSummary, useGaps } from './Journey';
 
 export interface ViewProps { D: Dashboard; version: number; go: (tab: string) => void }
@@ -164,73 +166,96 @@ export function Money({ D }: ViewProps) {
   </>;
 }
 
-const SEV: Record<string, 'red' | 'orange' | 'amber' | 'ok'> = { red: 'red', orange: 'orange', amber: 'amber' };
-const KIND: Record<string, string> = {
-  completeness: 'Missing entries', baseline: 'No comparison yet', lay_rate: 'Lay rate', feed_buffer: 'Feed in store', water_feed: 'Water and feed',
-  sales_pattern: 'Sales', count_variance: 'Stock count off the book', damaged_collection: 'Damaged at collection', damaged_outlet: 'Damaged at the outlet',
-  damaged_transit: 'Damaged on the way', transit: 'Deliveries not received', cash_variance: 'Cash count', unbanked: 'Cash not banked',
-};
-const insightTitle = (x: WeeklyInsight) => {
-  const k = KIND[x.kind] ?? 'This week';
-  return /^[A-Z]/.test(x.where) && x.where !== 'Central Farm' || x.kind === 'lay_rate' ? `${k} · ${x.where}` : k;
-};
-
 export function Report({ D, version }: ViewProps) {
   const I = intelligence(D), a = I.a, b = I.b;
   const [R, setR] = useState<WeeklyReport | null>(null);
   const [err, setErr] = useState('');
-  useEffect(() => { loadWeeklyReport().then((r) => { setR(r); setErr(''); }).catch((e) => setErr(e instanceof Error ? e.message : 'Could not load the report.')); }, [version]);
-  // a comparison is shown only when the week before was entered well enough to be fair
-  const cmp = !!R?.baseline.comparable;
-  const prev = (v: string) => (cmp ? v : '–');
-  const rows: [string, string, string, number, number, boolean | null, boolean?][] = [
-    ['Eggs collected', `${n0(a.eggs / 30)} tr`, `${n0(b.eggs / 30)} tr`, a.eggs, b.eggs, false],
-    ['Lay rate (days entered)', pct(a.lay), pct(b.lay), a.lay, b.lay, false, true],
-    ['Cracked at collection', pct(a.cracked), pct(b.cracked), a.cracked, b.cracked, true, true],
-    ['Feed used', `${n0(a.feed / D.settings.bag_kg)} bags`, `${n0(b.feed / D.settings.bag_kg)} bags`, a.feed, b.feed, null],
-    ['Feed per egg', Number.isFinite(a.gpe) ? `${n0(a.gpe)} g` : '–', Number.isFinite(b.gpe) ? `${n0(b.gpe)} g` : '–', a.gpe, b.gpe, true],
-    ['Feed cost per tray', kes(a.costTray), kes(b.costTray), a.costTray, b.costTray, true],
-    ['Water drunk', `${n0(a.water)} L`, `${n0(b.water)} L`, a.water, b.water, null],
-    ['Water per kg of feed', Number.isFinite(a.ratio) ? `${a.ratio.toFixed(2)} L` : '–', Number.isFinite(b.ratio) ? `${b.ratio.toFixed(2)} L` : '–', a.ratio, b.ratio, null],
-    ['Sales', kes(a.sales), kes(b.sales), a.sales, b.sales, false],
-    ['Average price per egg', Number.isFinite(a.perEgg) ? `KES ${a.perEgg.toFixed(2)}` : '–', Number.isFinite(b.perEgg) ? `KES ${b.perEgg.toFixed(2)}` : '–', a.perEgg, b.perEgg, false],
-    ['Eggs lost to breakage', `${a.brk} pc`, `${b.brk} pc`, a.brk, b.brk, true],
-    ['Bird deaths', String(a.mort), String(b.mort), a.mort, b.mort, true],
-    ['Cash count variance', kes(a.cv), kes(b.cv), a.cv, b.cv, null],
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => { loadWeeklyReport().then((r) => { setR(r); setErr(''); }).catch((e) => setErr(e instanceof Error ? e.message : 'Could not load the report.')).finally(() => setLoaded(true)); }, [version]);
+  if (!loaded) return <ReportSkeleton />;
+  const W = buildWeekReport(D, R);
+  const cmp = W.comparable;
+  const laying = W.flocks.filter((r) => r.days > 0 && r.guide != null);
+  const gHens = laying.reduce((t, r) => t + r.hens, 0);
+  const gLay = gHens ? laying.reduce((t, r) => t + r.guide! * r.hens, 0) / gHens : NaN;
+  const gDeaths = W.flocks.reduce((t, r) => t + r.mortGuide * r.hens, 0);
+  const s = D.settings;
+  const rows: [string, string, string, string, number, number, boolean | null, boolean?][] = [
+    ['Eggs collected', `${n0(a.eggs / 30)} trays`, '', `${n0(b.eggs / 30)} trays`, a.eggs, b.eggs, false],
+    ['Lay rate (days entered)', pct(a.lay), Number.isFinite(gLay) ? pct(gLay, 0) : '', pct(b.lay), a.lay, b.lay, false, true],
+    ['Cracked at collection', pct(a.cracked), `under ${GUIDE.crackedPct}%`, pct(b.cracked), a.cracked, b.cracked, true, true],
+    ['Feed used', `${n0(a.feed / s.bag_kg)} bags`, '', `${n0(b.feed / s.bag_kg)} bags`, a.feed, b.feed, null],
+    ['Feed per egg', Number.isFinite(a.gpe) ? `${n0(a.gpe)} g` : '', `${n0(GUIDE.feedPerEggG[0])} to ${n0(GUIDE.feedPerEggG[1])} g`, Number.isFinite(b.gpe) ? `${n0(b.gpe)} g` : '', a.gpe, b.gpe, true],
+    ['Feed cost per tray', Number.isFinite(a.costTray) ? kes(a.costTray) : '', '', Number.isFinite(b.costTray) ? kes(b.costTray) : '', a.costTray, b.costTray, true],
+    ['Water drunk', `${n0(a.water)} L`, '', `${n0(b.water)} L`, a.water, b.water, null],
+    ['Water per kg of feed', Number.isFinite(a.ratio) ? `${a.ratio.toFixed(2)} L` : '', `${s.water_ratio_min} to ${s.water_ratio_max} L`, Number.isFinite(b.ratio) ? `${b.ratio.toFixed(2)} L` : '', a.ratio, b.ratio, null],
+    ['Sales', kes(a.sales), '', kes(b.sales), a.sales, b.sales, false],
+    ['Average price per egg', Number.isFinite(a.perEgg) ? `KES ${a.perEgg.toFixed(2)}` : '', '', Number.isFinite(b.perEgg) ? `KES ${b.perEgg.toFixed(2)}` : '', a.perEgg, b.perEgg, false],
+    ['Eggs lost to breakage', `${n0(a.brk)} eggs`, '', `${n0(b.brk)} eggs`, a.brk, b.brk, true],
+    ['Bird deaths', n0(a.mort), gDeaths ? `about ${n0(gDeaths)}` : '', n0(b.mort), a.mort, b.mort, true],
+    ['Cash count difference', kes(a.cv), '', kes(b.cv), a.cv, b.cv, null],
   ];
   const ol = I.outlets.slice().sort((p, q) => q.sales.value - p.sales.value);
-  const why = R && !cmp ? (R.baseline.reason === 'first_week' ? 'no full week before yet' : 'week before not fully entered') : 'last 7 days vs the 7 before';
-  return <div className="rep" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-    <Card><div className="muted" style={{ fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 650 }}>
-      Weekly intelligence report · {R ? R.period.label : `${dshort(I.W1[0])} – ${dshort(I.W1[6])}`}{R?.provisional ? ' · provisional' : ''}</div>
-      <h2 style={{ marginTop: 6 }}>Desert Pearl Ventures · Tuala Farm Fresh Eggs</h2>
-      {err ? <p className="lead">{err}</p> : !R ? <p className="muted">Working out this week…</p>
-        : R.insights.length ? R.insights.map((x, i) => <div className="finding" key={i}>
-            <span style={{ width: 4, borderRadius: 2, background: sevVar(SEV[x.severity] ?? 'ok'), gridRow: 'span 2' }} />
-            <b>{insightTitle(x)}</b><p>{x.text}</p></div>)
-        : <p className="lead">Nothing needs attention this week.</p>}
-      <p className="muted" style={{ fontSize: 12.5, margin: '10px 0 0' }}>Figures cover days that were entered; missing days are listed first.</p></Card>
-    <Card title="Scorecard" aside={<span className="muted">{why}</span>}><div className="tblw"><table>
-      <thead><tr><th>Measure</th><th>Last 7 days</th><th>Week before</th><th>Change</th></tr></thead>
-      <tbody>{rows.map((r) => <tr key={r[0]}><td>{r[0]}</td><td><b>{r[1]}</b></td><td>{prev(r[2])}</td><td>{r[5] === null || !cmp ? <span className="muted">–</span> : <Delta a={r[3]} b={r[4]} invert={r[5]} pts={r[6]} />}</td></tr>)}</tbody></table></div></Card>
+  const dash = <span className="muted">–</span>;
+  const SEVC: Record<string, Parameters<typeof sevVar>[0]> = { red: 'red', orange: 'orange', amber: 'amber', info: 'info', ok: 'ok' };
+  return <div className="rep">
+    <Card>
+      <div className="rep-eyebrow">Weekly farm report</div>
+      <h2>Desert Pearl Ventures · Tuala Farm Fresh Eggs</h2>
+      <div className="rep-meta">
+        <span><b>Period</b>{W.period}</span><span><b>Prepared</b>{dlabel(D.today)}</span>
+        {W.coverage && <span><b>Records entered</b>{W.coverage.pct}% ({W.coverage.entered} of {W.coverage.expected})</span>}
+        <span><b>Comparison</b>{cmp ? 'With the week before' : 'Baseline week'}</span>
+      </div>
+      {err ? <p className="lead">{err}</p> : W.summary.map((t, i) => <p className="lead" key={i}>{t}</p>)}
+    </Card>
+    <Card title="Key findings" aside={<span className="muted">{W.findings.filter((x) => x.sev !== 'ok' && x.sev !== 'info').length} need attention</span>}>
+      {W.findings.length ? W.findings.map((x, i) => <div className="finding" key={i}>
+        <span style={{ background: sevVar(SEVC[x.sev] ?? 'ok') }} />
+        <b>{x.title}<em className="area">{x.area}</em></b>
+        <p>{x.text}{x.action && <span className="todo"><Icon name="check" />{x.action}{x.who ? ` · ${x.who}` : ''}</span>}</p></div>)
+        : <p className="lead">Every measure is within its normal range this week.</p>}
+    </Card>
+    {W.flocks.length > 0 && <Card title="Flock performance" aside={<span className="muted">last 7 days, days entered</span>}><div className="tblw"><table>
+      <thead><tr><th>House</th><th>Breed</th><th>Hens</th><th>Age</th><th>Stage</th><th>Lay rate</th><th>Guide for age</th><th>Farm target</th><th>Deaths</th><th>Water per hen</th></tr></thead>
+      <tbody>{W.flocks.map((r) => { const bench = r.target ?? r.guide; return <tr key={r.id}><td>{r.name}</td><td>{r.breed || <span className="muted">Not set</span>}</td><td>{n0(r.hens)}</td><td>{r.age} wks</td><td>{r.stage}</td>
+        <td>{r.days ? <span className={`chip ${bench != null && r.lay < bench - 0.03 ? 'sev-orange' : 'sev-ok'}`}>{pct(r.lay)}</span> : dash}</td>
+        <td>{r.guide != null ? `${pct(r.guide, 0)}${r.beyond ? ' (projected)' : ''}` : dash}</td><td>{r.target != null ? pct(r.target, 0) : dash}</td>
+        <td>{n0(r.deaths)}<small className="muted"> ({pct(r.mortPct, 2)})</small></td><td>{Number.isFinite(r.waterMl) ? `${n0(r.waterMl)} ml` : dash}</td></tr>; })}</tbody></table></div>
+      <p className="rep-note">Guide: {n0(GUIDE.feedG[0])} to {n0(GUIDE.feedG[1])} g of feed and {n0(GUIDE.waterMl[0])} to {n0(GUIDE.waterMl[1])} ml of water per hen a day in lay, more in hot weather.</p></Card>}
+    <Card title="Scorecard" aside={<span className="muted">{cmp ? 'last 7 days and the 7 before' : 'last 7 days'}</span>}><div className="tblw"><table>
+      <thead><tr><th>Measure</th><th>Last 7 days</th><th>Guide</th>{cmp && <><th>Week before</th><th>Change</th></>}</tr></thead>
+      <tbody>{rows.map((r) => <tr key={r[0]}><td>{r[0]}</td><td><b>{r[1] || dash}</b></td><td>{r[2] || dash}</td>
+        {cmp && <><td>{r[3] || dash}</td><td>{r[6] === null ? dash : <Delta a={r[4]} b={r[5]} invert={r[6]} pts={r[7]} />}</td></>}</tr>)}</tbody></table></div>
+      <p className="rep-note">{W.reason}</p></Card>
     <div className="grid2">
       <Card title="Lay rate by house" aside={<span className="muted">dashed: expected</span>}><HouseLayChart D={D} /></Card>
-      <Card title="Sales by location" aside={<span className="muted">last 7 days{cmp ? ' · faint bar: week before' : ''}</span>}>
+      <Card title="Sales by location" aside={<span className="muted">last 7 days{cmp ? ', faint bar: week before' : ''}</span>}>
         <BarList format={kes} rows={ol.map((o) => ({ key: o.loc, label: <><LocDot id={o.loc} />{D.locations.find((l) => l.id === o.loc)?.short}</>,
           value: o.sales.value, prev: cmp ? o.prev : undefined, color: `--l-${o.loc.toLowerCase()}`, note: cmp && o.prev ? `${o.chg >= 0 ? '▲' : '▼'} ${Math.abs(o.chg * 100).toFixed(1)}% on the week before` : undefined }))} /></Card>
     </div>
-    <Card title="Sales point league"><div className="tblw"><table>
-      <thead><tr><th>Location</th><th>Sales</th><th>Change</th><th>Share</th><th>Eggs sold</th><th>Breakage</th></tr></thead>
+    <Card title="Sales by outlet"><div className="tblw"><table>
+      <thead><tr><th>Location</th><th>Sales</th>{cmp && <th>Change</th>}<th>Share</th><th>Eggs sold</th><th>Breakage</th></tr></thead>
       <tbody>{ol.map((o) => <tr key={o.loc}><td><LocDot id={o.loc} />{D.locations.find((l) => l.id === o.loc)?.short}</td><td>{kes(o.sales.value)}</td>
-        <td>{cmp && o.prev ? <span className={o.chg >= 0 ? 'up' : 'down'}>{o.chg >= 0 ? '▲' : '▼'} {Math.abs(o.chg * 100).toFixed(1)}%</span> : '–'}</td>
-        <td>{a.sales ? pct(o.sales.value / a.sales, 0) : '–'}</td><td>{eggs(o.sales.pcs)}</td><td>{pct(o.rate)}</td></tr>)}</tbody></table></div></Card>
-    <Card title="Recommended actions">{I.actions.length ? <div className="tblw"><table className="actions-tbl">
+        {cmp && <td>{o.prev ? <span className={o.chg >= 0 ? 'up' : 'down'}>{o.chg >= 0 ? '▲' : '▼'} {Math.abs(o.chg * 100).toFixed(1)}%</span> : dash}</td>}
+        <td>{a.sales ? pct(o.sales.value / a.sales, 0) : dash}</td><td>{eggs(o.sales.pcs)}</td><td>{o.base ? pct(o.rate) : dash}</td></tr>)}</tbody></table></div></Card>
+    <Card title="Recommended actions">{W.actions.length ? <div className="tblw"><table className="actions-tbl">
       <thead><tr><th>Priority</th><th>Action</th><th>Who</th></tr></thead>
-      <tbody>{I.actions.map((r, i) => <tr key={i}><td><span className={`chip ${sevClass(r[0] === 'High' ? 'orange' : 'amber')}`}>{r[0]}</span></td><td>{r[1]}</td><td>{r[2]}</td></tr>)}</tbody></table></div>
-      : <Empty>No actions needed this week.</Empty>}
-      <p className="muted" style={{ fontSize: 12.5, margin: '12px 0 0' }}>Built from staff records. Expected lay rates come from each house's settings; use the figures in the breed guide the farm follows.</p></Card>
+      <tbody>{W.actions.map((r, i) => <tr key={i}><td><span className={`chip ${sevClass(r.priority === 'High' ? 'orange' : r.priority === 'Medium' ? 'amber' : 'info')}`}>{r.priority}</span></td><td>{r.text}</td><td>{r.who}</td></tr>)}</tbody></table></div>
+      : <Empty>No actions needed this week.</Empty>}</Card>
+    {W.coverage && W.coverage.gaps.length > 0 && <Card title="Data coverage" aside={<span className="muted">{W.coverage.entered} of {W.coverage.expected} daily records</span>}>
+      <div className="cov"><span style={{ width: `${Math.min(100, W.coverage.pct)}%` }} /></div>
+      <div className="tblw"><table><thead><tr><th>Place</th><th>Not entered</th><th>Days</th></tr></thead>
+        <tbody>{W.coverage.gaps.map((g) => <tr key={g.where}><td>{g.where}</td><td>{g.missing.join(', ')}</td><td>{g.days.join(', ')}</td></tr>)}</tbody></table></div>
+      <p className="rep-note">Days that were not entered are left out of every figure above rather than counted as zero. Days with gaps, under Alerts, opens each one to fill in.</p></Card>}
+    <p className="rep-note" style={{ margin: '0 4px' }}>{W.guideNote} Source: Hy-Line Brown Commercial Layers performance standards.</p>
     {(D.me.role === 'owner' || D.me.role === 'manager') && <MonthBooks D={D} />}
   </div>;
+}
+
+function ReportSkeleton() {
+  return <div className="rep" aria-busy="true"><div className="card"><Skel w="30%" h={12} /><Skel w="70%" h={26} mt={10} /><Skel w="90%" mt={16} /><Skel w="80%" mt={8} /><Skel w="60%" mt={8} /></div>
+    <div className="card"><Skel w="25%" h={16} /><SkelList n={4} /></div><div className="card"><Skel w="25%" h={16} /><SkelList n={6} /></div></div>;
 }
 
 /** Small helper for the tank and feed facts on management screens. */

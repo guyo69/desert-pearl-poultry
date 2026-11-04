@@ -962,17 +962,100 @@ export const voidForm = (kind: string, id: number, what: string): FormSpec => ({
 
 /* ---------------- me ---------------- */
 /* ---------------- owner & manager setup ---------------- */
-export const houseForm = (D: Dashboard, h?: House): FormSpec => ({
-  title: h ? `Edit ${h.name}` : 'Add a house',
-  intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Enter the hens in the house on the start date. Deaths recorded after that date are subtracted automatically. When a new flock is placed, set the new count and date.</p>,
+/* ---------------- houses and flocks (owner, farm manager, production clerk) ---------------- */
+const BREEDS = ['Hy-Line Brown', 'ISA Brown', 'Lohmann Brown', 'Bovans Brown', 'Kenbro', 'Kuroiler', 'Improved Kienyeji'];
+const flock = (action: string, p: Record<string, unknown>) => rpc<Record<string, any>>('rpc_flock', { p_action: action, p });
+const breedFields = (def?: string | null): Field[] => {
+  const known = !def || BREEDS.includes(def);
+  return [
+    { type: 'select', id: 'breed', label: 'Breed', options: [...BREEDS.map((b): [string, string] => [b, b]), ['', 'Not known'], [NEW, 'Other breed']], def: known ? def ?? BREEDS[0] : NEW },
+    { type: 'group', show: (v) => v.breed === NEW, fields: [{ type: 'text', id: 'breed_other', label: 'Breed name', def: known ? '' : def ?? '', placeholder: 'e.g. Dekalb Brown' }] },
+  ];
+};
+const breedOf = (v: V) => (v.breed === NEW ? String(v.breed_other ?? '').trim() : String(v.breed ?? '')) || null;
+
+/** A new, empty house for an expansion. Its first flock is placed with New flock. */
+export const houseNewForm = (D: Dashboard): FormSpec => ({
+  title: 'Add a house',
+  intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>For a new or newly built house. Once it is added, place its flock with New flock.</p>,
+  fields: [{ type: 'pair', fields: [{ type: 'text', id: 'id', label: 'Short code', placeholder: `e.g. ${String.fromCharCode(65 + D.houses.length)}` },
+    { type: 'text', id: 'name', label: 'Name', placeholder: `e.g. House ${String.fromCharCode(65 + D.houses.length)}` }] }],
+  onSubmit: async (v) => {
+    const r = await flock('house_new', { id: String(v.id ?? '').trim(), name: String(v.name ?? '').trim() });
+    return `${r.name} added. Place its flock with New flock.`;
+  },
+});
+
+/** A flock placed in a house. Any flock already there leaves on that date. */
+export function flockForm(D: Dashboard, houseId?: string): FormSpec {
+  const cur = (id: unknown) => (D.flocks ?? []).find((f) => f.house_id === id && !f.ended_on);
+  return {
+    title: 'New flock',
+    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Hens placed in a house. If a flock is already in it, that flock leaves on this date and keeps its records.</p>,
+    fields: [
+      { type: 'select', id: 'house', label: 'House', options: D.houses.map((h): [string, string] => [h.id, `${h.name}${h.birds_at_start > 0 ? ` (${n0(h.birds_at_start)} hens now)` : ' (empty)'}`]), def: houseId ?? D.houses.find((h) => !h.birds_at_start)?.id },
+      ...breedFields(),
+      { type: 'pair', fields: [{ type: 'num', id: 'hens', label: 'Hens placed', suffix: 'hens' }, { type: 'num', id: 'age', label: 'Age when placed', suffix: 'weeks', def: 18 }] },
+      { type: 'pair', fields: [{ type: 'date', id: 'date', label: 'Date placed', def: D.today, min: addDays(D.today, -62), max: D.today }, { type: 'num', id: 'exp', label: 'Expected lay rate', suffix: '%', def: 85 }] },
+      { type: 'text', id: 'note', label: 'Supplier or note (optional)', placeholder: 'e.g. Kenchic, delivery 2210' },
+    ],
+    calc: (v) => { const f = cur(v.house); return f ? <Bad l="The flock now in the house" r={`${n0(f.hens)} hens placed ${dlabel(f.placed_on)} leave on ${dlabel(String(v.date || D.today))}`} />
+      : <Ok>The house is empty</Ok>; },
+    onSubmit: async (v) => {
+      if (!(v.hens > 0)) throw new Error('Enter the hens placed.');
+      if (!(v.exp > 0 && v.exp <= 100)) throw new Error('Enter the expected lay rate as a percentage.');
+      const r = await flock('place', { house: v.house, breed: breedOf(v), hens: v.hens, age_weeks: v.age || 0, expected_lay: v.exp, placed_on: v.date || D.today, note: String(v.note ?? '').trim() || null });
+      return `${n0(r.hens)} hens placed in ${r.house}.${r.ended ? ' The earlier flock is closed with its records.' : ''}`;
+    },
+  };
+}
+
+/** Correct the breed, age or expected lay rate of the flock in a house now. */
+export function flockEditForm(D: Dashboard, houseId: string): FormSpec {
+  const h = D.houses.find((x) => x.id === houseId)!, f = (D.flocks ?? []).find((x) => x.house_id === houseId && !x.ended_on);
+  return {
+    title: `${h.name}: the flock`,
+    fields: [
+      ...breedFields(f?.breed ?? h.breed),
+      { type: 'pair', fields: [{ type: 'num', id: 'age', label: 'Age when placed', suffix: 'weeks', def: f?.age_weeks ?? h.age_weeks_at_start },
+        { type: 'num', id: 'exp', label: 'Expected lay rate', suffix: '%', def: Math.round((f?.expected_lay ?? h.expected_lay) * 100) }] },
+      { type: 'note', text: <p className="muted" style={{ margin: 0, fontSize: 13 }}>The hen count comes from the hens placed less the deaths recorded. A new batch of hens is a New flock.</p> },
+    ],
+    onSubmit: async (v) => {
+      if (!f) throw new Error(`${h.name} has no flock on record. Place one with New flock.`);
+      await flock('edit', { flock: f.id, breed: breedOf(v), age_weeks: v.age, expected_lay: v.exp });
+      return 'Saved.';
+    },
+  };
+}
+
+/** The house is emptied: hens sold, moved or culled. */
+export const flockEndForm = (D: Dashboard, houseId: string): FormSpec => {
+  const h = D.houses.find((x) => x.id === houseId)!;
+  return {
+    title: `Empty ${h.name}`,
+    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Records that the flock left the house. Its records stay; the house counts no hens until a new flock is placed.</p>,
+    fields: [
+      { type: 'date', id: 'date', label: 'Date the house was emptied', def: D.today, max: D.today },
+      { type: 'select', id: 'why', label: 'Why', options: [['Sold as spent hens', 'Sold as spent hens'], ['Moved to another house', 'Moved to another house'], ['Culled', 'Culled'], [NEW, 'Other']] },
+      { type: 'group', show: (v) => v.why === NEW, fields: [{ type: 'text', id: 'other', label: 'Say what happened' }] },
+    ],
+    onSubmit: async (v) => {
+      await flock('end', { house: h.id, ended_on: v.date || D.today, note: v.why === NEW ? String(v.other ?? '').trim() : v.why });
+      return `${h.name} recorded as empty.`;
+    },
+  };
+};
+
+/** Owner and farm manager: rename a house or take it out of use. The flock is changed with the flock forms. */
+export const houseForm = (_D: Dashboard, h: House): FormSpec => ({
+  title: `Edit ${h.name}`,
   fields: [
-    { type: 'pair', fields: [{ type: 'text', id: 'id', label: 'Code', def: h?.id ?? '', placeholder: 'e.g. C' }, { type: 'text', id: 'name', label: 'Name', def: h?.name ?? '', placeholder: 'e.g. House C' }] },
-    { type: 'pair', fields: [{ type: 'num', id: 'birds', label: 'Hens on start date', def: h?.birds_at_start ?? '' }, { type: 'date', id: 'start', label: 'Start date', def: h?.start_date ?? D.today }] },
-    { type: 'pair', fields: [{ type: 'num', id: 'age', label: 'Age on start date', suffix: 'weeks', def: h?.age_weeks_at_start ?? '' }, { type: 'num', id: 'exp', label: 'Expected lay rate', suffix: '%', def: h ? Math.round(h.expected_lay * 100) : 90 }] },
-    { type: 'select', id: 'active', label: 'Status', options: [['true', 'In use'], ['false', 'Not in use']], def: String(h?.active ?? true) },
+    { type: 'text', id: 'name', label: 'Name', def: h.name },
+    { type: 'select', id: 'active', label: 'Status', options: [['true', 'In use'], ['false', 'Not in use']], def: String(h.active) },
   ],
   onSubmit: async (v) => {
-    await rpc('rpc_save_house', { p_id: v.id, p_name: v.name, p_birds: v.birds, p_start: v.start, p_age: v.age, p_expected: v.exp, p_active: v.active === 'true' });
+    await rpc('rpc_save_house', { p_id: h.id, p_name: v.name, p_birds: h.birds_at_start, p_start: h.start_date, p_age: h.age_weeks_at_start, p_expected: h.expected_lay, p_active: v.active === 'true' });
     return 'House saved.';
   },
 });

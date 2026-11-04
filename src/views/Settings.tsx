@@ -2,13 +2,14 @@
 // activity log and the sign-in security log.
 import { useCallback, useEffect, useState } from 'react';
 import { auth, requestReload, rpc, securityLog, staffAdmin, type SecurityEvent } from '../lib/api';
-import { dlabel, dnum, n0, timeOf } from '../lib/format';
+import { dlabel, dnum, timeOf } from '../lib/format';
 import { disablePush, enablePush, pushStatus } from '../lib/push';
 import type { Settings as S, StaffAdminRow, StaffLite } from '../lib/types';
-import { houseForm, openingForm, staffForm } from '../forms/forms';
+import { openingForm, staffForm } from '../forms/forms';
+import { HousesFlocks } from './Flocks';
 import { Icon } from '../ui/icons';
 import { useUI } from '../ui/ui';
-import { Card, Empty, Seg } from '../ui/widgets';
+import { Card, Empty, Seg, SkelList } from '../ui/widgets';
 import { BackupCodes, MfaEnroll, NewPassword } from './Auth';
 import { RecordList } from './common';
 import { MonthBooks } from './MonthBooks';
@@ -96,7 +97,7 @@ function Staff({ D }: ViewProps) {
     </div>);
   };
   return <Card title="Staff" aside={<button className="lnk" onClick={() => ui.openForm(staffForm(D))}>Add staff</button>}>
-    {!rows ? <div className="center" style={{ minHeight: 100 }}><div className="spinner" /></div> : <div className="list">{rows.map((s) => {
+    {!rows ? <SkelList n={4} /> : <div className="list">{rows.map((s) => {
       const locked = s.locked_until && new Date(s.locked_until) > new Date();
       const tempOver = s.must_change_password && s.temp_expires_at && new Date(s.temp_expires_at) < new Date();
       return <div className="li" key={s.id} style={s.active ? undefined : { opacity: 0.55 }}>
@@ -128,7 +129,7 @@ function SecurityLog() {
   const list = (rows ?? []).filter((r) => only === 'all' || !r.ok);
   const fails24 = (rows ?? []).filter((r) => !r.ok && Date.now() - new Date(r.at).getTime() < 86400000).length;
   return <Card title="Sign-in security log" aside={<Seg value={only} options={[['all', 'All'], ['fail', 'Failed']]} onChange={setOnly} />}>
-    {err ? <p className="form-err">{err}</p> : !rows ? <div className="center" style={{ minHeight: 100 }}><div className="spinner" /></div> : <>
+    {err ? <p className="form-err">{err}</p> : !rows ? <SkelList n={6} /> : <>
       <p className="muted small">{fails24} failed attempt{fails24 === 1 ? '' : 's'} in the last 24 hours. Every sign-in, code, password change and staff change is recorded here.</p>
       {list.length ? <div className="list seclog">{list.slice(0, 150).map((r, i) => <div className="li" key={i}>
         <span className="av" style={{ background: r.ok ? 'var(--f-full)' : 'var(--f-none)' }}><Icon name={r.ok ? 'check' : 'x'} /></span>
@@ -159,29 +160,25 @@ function Thresholds({ D }: ViewProps) {
     <p className="muted" style={{ fontSize: 13, margin: '10px 0 0' }}>The feed buffer and tank size drive the colour scale: Full at 100% or more, Good 75–99%, Watch 50–74%, Low 25–49%, No buffer below 25%.</p></Card>;
 }
 
-function Houses({ D }: ViewProps) {
-  const ui = useUI();
-  return <Card title="Houses" aside={<button className="lnk" onClick={() => ui.openForm(houseForm(D))}>Add house</button>}>
-    {D.houses.length ? <div className="tblw"><table><thead><tr><th>House</th><th>Hens at start</th><th>Start date</th><th>Expected lay</th><th></th></tr></thead>
-      <tbody>{D.houses.map((h) => <tr key={h.id}><td>{h.name}</td><td>{n0(h.birds_at_start)}</td><td>{dnum(h.start_date)}</td><td>{Math.round(h.expected_lay * 100)}%</td>
-        <td><button className="btn sm alt" onClick={() => ui.openForm(houseForm(D, h))}>Edit</button></td></tr>)}</tbody></table></div> : <Empty>No houses yet.</Empty>}</Card>;
+/** Activity: every record as it was entered, by location. */
+export function Activity({ D, version }: ViewProps) {
+  const [loc, setLoc] = useState<string>('all');
+  return <Card title="Activity log" aside={<Seg value={loc} options={[['all', 'All'], ...D.locations.map((l): [string, string] => [l.id, l.short])]} onChange={setLoc} />}>
+    <RecordList D={D} version={version} loc={loc === 'all' ? null : loc} canVoid={false} limit={40} />
+    <p className="muted" style={{ fontSize: 13, margin: '10px 0 0' }}>Every record as it was entered, newest day first. Nothing here is changed or deleted.</p></Card>;
 }
 
+/** Settings: houses and flocks, staff, prices and thresholds, workbooks, opening balances, the security log and your account. */
 export function Setup(p: ViewProps & { signOut: (everywhere?: boolean) => void }) {
-  const { D, version } = p, ui = useUI();
-  const [sec, setSec] = useState<'activity' | 'setup' | 'security'>('activity');
-  const [loc, setLoc] = useState<string>('all');
-  const owner = D.me.role === 'owner', manager = D.me.role === 'manager';
+  const { D } = p, ui = useUI();
+  const owner = D.me.role === 'owner';
+  const [sec, setSec] = useState<'setup' | 'security'>('setup');
   return <>
-    {owner && <Seg value={sec} options={[['activity', 'Activity log'], ['setup', 'Setup'], ['security', 'Security']]} onChange={setSec} />}
-    {manager && <Seg value={sec} options={[['activity', 'Activity log'], ['setup', 'Setup']]} onChange={setSec} />}
-    {sec === 'security' ? <SecurityLog /> : sec === 'activity' ? <Card title="Activity log" aside={<Seg value={loc} options={[['all', 'All'], ...D.locations.map((l): [string, string] => [l.id, l.short])]} onChange={setLoc} />}>
-      <RecordList D={D} version={version} loc={loc === 'all' ? null : loc} canVoid={false} limit={40} />
-      <p className="muted" style={{ fontSize: 13, margin: '10px 0 0' }}>Every record as it was entered. Nothing here is changed or deleted.</p></Card>
-    : <>
+    {owner && <Seg value={sec} options={[['setup', 'Farm setup'], ['security', 'Sign-in security']]} onChange={setSec} />}
+    {sec === 'security' ? <SecurityLog /> : <>
       {owner && !D.settings.go_live && <div className="banner warn"><div><b>Enter opening balances</b><p>On go-live morning, count eggs at every location, cash, M-Pesa and bank balances, feed and water, then enter them here.</p></div>
         <button className="btn yolk" onClick={() => ui.openForm(openingForm(D))}>Opening balances</button></div>}
-      <Houses {...p} />
+      <HousesFlocks D={D} />
       <Staff {...p} />
       <Thresholds {...p} />
       <MonthBooks D={D} />

@@ -4,7 +4,7 @@ import { rpc } from '../lib/api';
 import { addDays, daysBetween, dlabel, eggs, n0, pct, range } from '../lib/format';
 import { canEnter, collected, damagedAtFarm, deaths, hensNow, houseAge, layRate, mix, produced, stockNow, tankInfo, waterFeedRatio, waterOn, waterTrend } from '../lib/metrics';
 import {
-  collectForm, confirmIssueForm, dispatchForm, feedInForm, feedUseForm, houseDayForm, medForm, millForm, medicineForm, mortForm, scheduleForm, storeFeedInForm, storeFeedIssueForm,
+  collectForm, confirmIssueForm, dispatchForm, feedInForm, feedUseForm, flockForm, houseDayForm, medForm, millForm, medicineForm, mortForm, scheduleForm, storeFeedInForm, storeFeedIssueForm,
   storeMedInForm, storeMedIssueForm, tankForm, waterIntakeForm,
 } from '../forms/forms';
 import type { Dashboard } from '../lib/types';
@@ -15,11 +15,12 @@ import { FeedStockChart, FeedUseChart, TankChart, WaterChart, houseColor } from 
 import { RecordList } from './common';
 import { ClerkSteps } from './Journey';
 import { MillCard } from './Mill';
+import { HousesFlocks } from './Flocks';
 import type { ViewProps } from './Management';
 
 export function ClerkHome({ D, version, go }: ViewProps) {
   const ui = useUI(), farm = stockNow(D, 'FARM');
-  if (!D.houses.some((h) => h.birds_at_start > 0)) return <div className="banner warn"><div><b>No hens set up yet</b><p>The owner or farm manager needs to enter each house's hen count under Settings → Houses.</p></div></div>;
+  if (!D.houses.some((h) => h.birds_at_start > 0)) return <div className="banner warn"><div><b>No hens set up yet</b><p>Place each house's flock under Flock health, Houses and flocks.</p></div><button className="btn" onClick={() => ui.openForm(flockForm(D))}>New flock</button></div>;
   return <>
     <ClerkSteps D={D} />
     <StorePending D={D} />
@@ -121,12 +122,13 @@ export function Health({ D }: ViewProps) {
   const W = range(addDays(D.today, -7), addDays(D.today, -1)), M = range(addDays(D.today, -30), D.today);
   const done = async (id: number, v: boolean) => { try { await rpc('rpc_schedule_done', { p_id: id, p_done: v }); ui.toast(v ? 'Marked done.' : 'Marked not done.'); } catch (e) { ui.toast((e as Error).message); } };
   return <>
-    <Card title="Flocks" aside={canEnter(D) ? <button className="lnk" onClick={() => ui.openForm(mortForm(D))}>Record mortality</button> : undefined}><div className="tblw"><table>
+    <Card title="Flock health" aside={canEnter(D) ? <button className="lnk" onClick={() => ui.openForm(mortForm(D))}><Icon name="bird" />Record mortality</button> : undefined}><div className="tblw"><table>
       <thead><tr><th>House</th><th>Hens</th><th>Age</th><th>Lay 7d</th><th>Expected</th><th>Water/bird</th><th>Deaths 30d</th></tr></thead>
-      <tbody>{D.houses.map((h) => { const lay = layRate(D, W, h.id), hens = hensNow(D, h.id), wpb = hens ? (waterOn(D, W, h.id) / 7 / hens) * 1000 : NaN;
+      <tbody>{D.houses.filter((h) => h.birds_at_start > 0).map((h) => { const lay = layRate(D, W, h.id), hens = hensNow(D, h.id), wpb = hens ? (waterOn(D, W, h.id) / 7 / hens) * 1000 : NaN;
         return <tr key={h.id}><td>{h.name}</td><td>{n0(hens)}</td><td>{houseAge(D, h)} wks</td>
           <td><span className={`chip ${lay < h.expected_lay - 0.04 ? 'sev-orange' : 'sev-ok'}`}>{pct(lay)}</span></td><td>{pct(h.expected_lay, 0)}</td>
           <td>{Number.isFinite(wpb) && wpb > 0 ? `${n0(wpb)} ml` : '–'}</td><td>{deaths(D, M, h.id)}</td></tr>; })}</tbody></table></div></Card>
+    <HousesFlocks D={D} />
     <MedicineStore D={D} mgmt={mgmt} />
     <Card title="Vaccination & treatment schedule" aside={mgmt ? <button className="lnk" onClick={() => ui.openForm(scheduleForm(D))}>Add task</button> : undefined}>
       {D.schedule.length ? <div>{D.schedule.map((e) => { const n = daysBetween(D.today, e.due);

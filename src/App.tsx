@@ -5,7 +5,7 @@ import type { Dashboard, Role } from './lib/types';
 import { collectForm, saleForm } from './forms/forms';
 import { Icon } from './ui/icons';
 import { UIProvider, useUI } from './ui/ui';
-import { AlertList } from './ui/widgets';
+import { AlertList, AppSkeleton } from './ui/widgets';
 import { ScreenGuard } from './ui/ScreenGuard';
 import { Login, MfaEnroll, MfaVerify, NewPassword } from './views/Auth';
 import { Alerts, Money, Overview, Report, Stock, type ViewProps } from './views/Management';
@@ -13,7 +13,7 @@ import { ClerkHome, Feed, Health, Records, Water } from './views/Farm';
 import { PosMoney, PosSales, PosStock, PosToday } from './views/SalesPoint';
 import { StoreHome, StoreItems, StoreRecords } from './views/Store';
 import { Mill } from './views/Mill';
-import { Account, Setup } from './views/Settings';
+import { Account, Activity, Setup } from './views/Settings';
 import { NoticeList } from './views/common';
 
 type Tab = { label: string; icon: string; view: (p: ViewProps & { signOut: (everywhere?: boolean) => void }) => ReactNode };
@@ -23,7 +23,8 @@ const TABS: Record<string, Tab> = {
   stock: { label: 'Stock', icon: 'box', view: (p) => <Stock {...p} /> },
   money: { label: 'Money', icon: 'wallet', view: (p) => <Money {...p} /> },
   report: { label: 'Report', icon: 'report', view: (p) => <Report {...p} /> },
-  setup: { label: 'Activity', icon: 'list', view: (p) => <Setup {...p} /> },
+  activity: { label: 'Activity', icon: 'list', view: (p) => <Activity {...p} /> },
+  settings: { label: 'Settings', icon: 'sliders', view: (p) => <Setup {...p} /> },
   home: { label: 'Home', icon: 'dash', view: (p) => <ClerkHome {...p} /> },
   feed: { label: 'Feed', icon: 'sack', view: (p) => <Feed {...p} /> },
   mill: { label: 'Feed mill', icon: 'scoop', view: (p) => <Mill {...p} /> },
@@ -41,8 +42,8 @@ const TABS: Record<string, Tab> = {
 };
 /** First five go in the bottom bar on phones; all appear in the side rail and menu. */
 const ROLE_TABS: Record<Role, string[]> = {
-  owner: ['ov', 'stock', 'money', 'report', 'setup', 'alerts', 'feed', 'mill', 'water', 'health'],
-  manager: ['alerts', 'ov', 'stock', 'report', 'health', 'feed', 'mill', 'water', 'money', 'records', 'setup'],
+  owner: ['ov', 'stock', 'money', 'report', 'activity', 'alerts', 'feed', 'mill', 'water', 'health', 'settings'],
+  manager: ['alerts', 'ov', 'stock', 'report', 'health', 'feed', 'mill', 'water', 'money', 'records', 'activity', 'settings'],
   clerk: ['home', 'feed', 'water', 'health', 'records', 'me'],
   store: ['store', 'mill', 'feed', 'meds', 'srecords', 'me'],
   pos: ['today', 'pstock', 'psales', 'pmoney', 'me'],
@@ -90,7 +91,7 @@ export default function App() {
   const out = useCallback(async (everywhere = false) => { await endSession(everywhere); setNotice(''); last.current = ''; await check(); }, [check]);
 
   if (!st) return <div className="center">{offline ? <div className="card" style={{ maxWidth: 440 }}><h3>Cannot reach Desert Pearl</h3><p className="muted">{offline}</p>
-    <button className="btn" onClick={check}>Try again</button></div> : <div className="spinner" />}</div>;
+    <button className="btn" onClick={check}>Try again</button></div> : <div className="boot-mark" aria-label="Loading"><span /><span /><span /></div>}</div>;
   const u = st.user;
   if (st.state === 'ready' && u) return <Signed key={u.id} signOut={out} />;
   if (st.state === 'set_password' && u) return <NewPassword forced user={u} onDone={check} onSignOut={() => out()} />;
@@ -142,14 +143,15 @@ function Signed({ signOut }: { signOut: (everywhere?: boolean) => void }) {
   }, [reload, check]);
 
   const out = (everywhere = false) => { setD(null); signOut(everywhere); };
-  if (!D) return <div className="center">{err ? <div className="card" style={{ maxWidth: 440 }}><h3>Cannot load the farm data</h3><p className="muted">{err}</p><div className="row-btns"><button className="btn" onClick={reload}>Try again</button><button className="btn alt" onClick={() => out()}>Sign out</button></div></div> : <div className="spinner" />}</div>;
+  if (!D && !err) return <AppSkeleton />;
+  if (!D) return <div className="center">{err ? <div className="card" style={{ maxWidth: 440 }}><h3>Cannot load the farm data</h3><p className="muted">{err}</p><div className="row-btns"><button className="btn" onClick={reload}>Try again</button><button className="btn alt" onClick={() => out()}>Sign out</button></div></div> : null}</div>;
   return <UIProvider afterSave={reload}><Shell D={D} version={version} err={err} signOut={out} reload={reload} /></UIProvider>;
 }
 
 function Shell({ D, version, err, signOut, reload }: { D: Dashboard; version: number; err: string; signOut: (everywhere?: boolean) => void; reload: () => void }) {
   const ui = useUI(), online = useOnline();
   const tabs = ROLE_TABS[D.me.role];
-  const [tab, setTab] = useState<string>(() => { const h = location.hash.slice(1); return tabs.includes(h) ? h : tabs[0]; });
+  const [tab, setTab] = useState<string>(() => { const h = location.hash.slice(1).replace(/^setup$/, 'settings'); return tabs.includes(h) ? h : tabs[0]; });
   const [drawer, setDrawer] = useState(false);
   const go = (t: string) => { setTab(t); setDrawer(false); try { history.replaceState(null, '', `#${t}`); } catch { /* ignore */ } window.scrollTo(0, 0); };
   useEffect(() => { if (!tabs.includes(tab)) setTab(tabs[0]); }, [tabs, tab]);
@@ -179,7 +181,7 @@ function Shell({ D, version, err, signOut, reload }: { D: Dashboard; version: nu
     <div className="shell">
       <nav className="rail" aria-label="Sections"><div className="rail-loc">{loc?.name ?? 'All locations'}</div>
         {tabs.map((t) => <button key={t} aria-current={tab === t} onClick={() => go(t)}><Icon name={TABS[t].icon} />{TABS[t].label}</button>)}
-        {!tabs.includes('me') && !tabs.includes('setup') && <button onClick={() => go('me')}><Icon name="user" />My account</button>}</nav>
+        {!tabs.includes('me') && !tabs.includes('settings') && <button onClick={() => go('me')}><Icon name="user" />My account</button>}</nav>
       <main key={tab}>
         {D.me.backup_codes_left !== undefined && D.me.mfa_enabled && D.me.backup_codes_left <= 2 && tab !== 'me' && <div className="banner warn"><div><b>{D.me.backup_codes_left} backup code{D.me.backup_codes_left === 1 ? '' : 's'} left</b><p>Make a new set so you can still sign in if your phone is lost.</p></div><button className="btn sm" onClick={() => go('me')}>My account</button></div>}
         {err && online && <div className="banner warn"><div><b>Could not refresh</b><p>{err}</p></div><button className="btn sm" onClick={reload}>Try again</button></div>}

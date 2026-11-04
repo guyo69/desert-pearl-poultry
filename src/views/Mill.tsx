@@ -69,6 +69,6 @@ export function Mill({ D, version }: ViewProps) {
     {(D.mill_daily ?? []).length > 0 && <Card title="Feed milled" aside={<span className="muted">{t1(m.t7)} tonnes in the last 7 days</span>}><MillChart D={D} /></Card>}
     <Card title="Mill records" aside={<Seg value={k} options={KINDS} onChange={setK} />}>
       <RecordList D={D} version={version} kinds={k === 'all' ? ['mill', 'raw'] : [k]} canVoid={false} limit={k === 'all' ? 40 : 30} /></Card>
-    <p className="muted" style={{ fontSize: 13, margin: '0 4px' }}>The monthly workbook has a Store ledger tab with every raw material on each day it moved, as on the inventory clerk's ledger, and a Feed tab with what was milled, bought and given to each house. The owner and farm manager download it under Setup.</p>
+    <p className="muted" style={{ fontSize: 13, margin: '0 4px' }}>The monthly workbook has a Store ledger tab with every raw material on each day it moved, as on the inventory clerk's ledger, and a Feed tab with what was milled, bought and given to each house. The owner and farm manager download it under Settings.</p>
   </>;
 }

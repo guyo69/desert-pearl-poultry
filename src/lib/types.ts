@@ -13,7 +13,10 @@ export interface Settings {
 }
 export interface Location { id: string; name: string; short: string; kind: 'farm' | 'van' | 'shop'; sort: number; closed_dow?: number[] | null }
 export interface Account { id: string; name: string; kind: 'cash' | 'till' | 'paybill' | 'bank'; location_id: string | null; sort: number }
-export interface House { id: string; name: string; birds_at_start: number; start_date: string; age_weeks_at_start: number; expected_lay: number; active: boolean; sort: number }
+export interface House { id: string; name: string; birds_at_start: number; start_date: string; age_weeks_at_start: number; expected_lay: number; active: boolean; sort: number; breed?: string | null }
+/** A flock placed in a house: one per house at a time; placing a new one ends the one before. */
+export interface Flock { id: number; house_id: string; breed: string | null; hens: number; placed_on: string; age_weeks: number; expected_lay: number;
+  ended_on: string | null; end_note: string | null; note: string | null; recorded_at: string; recorded_by: string | null }
 export interface Medicine { id: number; name: string; category: string; unit: string; reorder: number; active: boolean; stock: number }
 /** A raw material of the farm's feed mill: kg in each tonne of feed (the recipe) and kg in the store. */
 export interface RawMaterial { id: number; name: string; per_tonne: number; bag_kg: number; active: boolean; sort: number; stock: number }
@@ -67,12 +70,14 @@ export interface Dashboard {
   /** the farm store (absent on an older server) */
   supplies?: Supply[]; store_pending?: StorePending[];
   /** the feed mill (absent on an older server) */
+  /** every flock, current and earlier (absent on an older server) */
+  flocks?: Flock[];
   raw?: RawMaterial[]; mill_daily?: { d: string; tonnes: number; batches: number }[];
   notifications: Notice[];
 }
 
 export interface ActivityRow {
-  kind: 'collect' | 'mort' | 'feed' | 'water' | 'med' | 'xfer' | 'sale' | 'brk' | 'count' | 'issue' | 'money' | 'cash' | 'credit' | 'supply' | 'confirm' | 'raw' | 'mill';
+  kind: 'collect' | 'mort' | 'feed' | 'water' | 'med' | 'xfer' | 'sale' | 'brk' | 'count' | 'issue' | 'money' | 'cash' | 'credit' | 'supply' | 'confirm' | 'raw' | 'mill' | 'flock';
   id: number; d: string; recorded_at: string; by_name: string | null; by_role: Role | null;
   location_id: string | null; voided: boolean; data: Record<string, any>;
 }

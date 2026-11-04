@@ -113,3 +113,24 @@ export function BarList({ rows, format }: { rows: { key: string; label: React.Re
       {r.note && <div className="br-note">{r.note}</div>}
     </div>))}</div>;
 }
+
+/* ---------------- loading skeletons ---------------- */
+export function Skel({ w = '100%', h = 13, mt = 0, r }: { w?: number | string; h?: number; mt?: number; r?: number }) {
+  return <span className="skel" style={{ width: w, height: h, marginTop: mt, borderRadius: r }} aria-hidden="true" />;
+}
+/** Rows shaped like a list of records while it loads. */
+export function SkelList({ n = 5 }: { n?: number }) {
+  return <div className="list" aria-busy="true" aria-label="Loading">{Array.from({ length: n }, (_, i) => <div className="li" key={i}>
+    <Skel w={32} h={32} r={9} /><div className="mid"><Skel w={`${55 + ((i * 17) % 30)}%`} h={14} /><Skel w={`${35 + ((i * 23) % 30)}%`} h={11} mt={7} /></div><Skel w={56} h={14} /></div>)}</div>;
+}
+/** The whole app's first load: bars, tiles and cards in their places. */
+export function AppSkeleton() {
+  return <div className="boot" aria-busy="true" aria-label="Loading the farm data">
+    <div className="boot-bar"><Skel w={28} h={28} r={8} /><div style={{ flex: 1, display: 'grid', justifyItems: 'center', gap: 6 }}><Skel w={120} h={15} /><Skel w={160} h={10} /></div><Skel w={28} h={28} r={8} /></div>
+    <main style={{ animation: 'none' }}>
+      <div className="tiles">{Array.from({ length: 6 }, (_, i) => <div className="tile skel-tile" key={i}><Skel w={38} h={38} r={11} /><Skel w="70%" h={13} /></div>)}</div>
+      <div className="grid2"><div className="card"><Skel w="40%" h={16} /><Skel w="60%" h={30} mt={14} /><Skel w="100%" h={8} mt={14} r={99} /></div>
+        <div className="card"><Skel w="35%" h={16} /><SkelList n={3} /></div></div>
+      <div className="card"><Skel w="30%" h={16} /><SkelList n={5} /></div>
+    </main></div>;
+}

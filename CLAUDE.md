@@ -91,10 +91,17 @@ Before you push, run `npm test` and `npm run build`. If you touch SQL, also run 
 - **Monthly workbook:** `rpc_month_book` also returns `materials`, `ledger` (per material per day it moved: opening, purchase, used, count adjustment, tonnes), `feed` (per day: milled, bought, used by house, adjustment, eggs), `houses`, `feed_open` and `feed_bag_kg`. `monthBook.ts` adds a Store ledger tab in the clerk's layout (closing = opening + purchase - used + adjustment, each opening linked to the previous closing, month KPIs over every row) and a Feed tab.
 - **Store morning reminder** also names the raw material that limits milling when the store cannot make a usual batch (the biggest in the last 30 days, else 5 tonnes).
 
+## Changes from the client, 5 Nov 2026
+
+- **Tabs:** Activity is the record log only. **Settings** (owner and farm manager) holds houses and flocks, staff, prices and thresholds, the monthly workbooks, opening balances, the security log (owner) and My account. An old `#setup` link opens Settings.
+- **Houses and flocks** (`flocks`, `houses.breed`, `rpc_flock(action, p)`: `house_new`, `place`, `edit`, `end`) for the owner, farm manager and production clerk. One flock per house at a time; placing a new flock ends the one before. The house's current-flock fields follow its current flock, and `farm_daily2()` counts hens from the flock in the house on each day, so earlier flocks keep their history. A house with no flock on record still counts from the house list. The Houses and flocks card is on Flock health and Settings. `rpc_save_house` is used from the app only to rename a house or take it out of use.
+- **Weekly report** (`src/lib/report.ts`, `src/lib/knowledge.ts`): written as a report, with no "provisional" labels. Records entered come first as a finding and in a Data coverage section; every flock is judged against the Hy-Line Brown performance standard for its age (low end of each published range, projected past 100 weeks) unless the house has a realistic target (a target of 97% or more counts as not set). The server's `weekly_facts` still supplies the numbers; the app writes the words.
+- **Interface:** dropdown options use the app's colours (no white on white in dark mode), text actions (`.lnk`, `.act`) are boxed buttons, loading shows skeletons instead of spinners, and lists, tiles, buttons and tables have hover and press motion (off with reduced motion).
+
 ## Open items
 
 - **Tank size:** `settings.tank_capacity_l` is 1,000 L while the farm sheet showed about 3,500 L drunk per house a day. Confirm the real tank size, then record a fresh tank reading.
-- **Lay rates:** set a realistic expected lay rate for each house. Both are at 100% now, so every week reports a shortfall.
+- **Lay rates:** both houses have expected lay at 100%. The report now uses the breed guide instead, and says so; set a realistic target with Edit flock. Both flocks are about 110 weeks old (placed Dec 2024 and Jan 2025 at 12 and 14 weeks); set their breed too.
 - **Closed days:** outlets are set as closed on Sunday (`locations.closed_dow = '{7}'`). The client said they would confirm this.
 - **Raw material opening stock:** the app's raw store starts empty. The inventory clerk should count each material once (Count the store) to bring in the ledger's closing stock. The paper ledger's 3 Nov wheat bran opening (6,390 kg) did not follow from the 29 Oct closing (1,273 kg); 5,117 kg was not recorded as a delivery.
 - **Later phases:** invoicing and a payment gateway are proposed, not built, and each needs its own scope agreement.

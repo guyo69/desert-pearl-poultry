@@ -9,7 +9,7 @@ import type { MonthBook } from '../lib/monthBook';
 import type { Dashboard } from '../lib/types';
 import { Icon } from '../ui/icons';
 import { useUI } from '../ui/ui';
-import { Card } from '../ui/widgets';
+import { Card, SkelList } from '../ui/widgets';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const label = (m: string) => `${MONTHS[+m.slice(5, 7) - 1]} ${m.slice(0, 4)}`;
@@ -47,7 +47,7 @@ export function MonthBooks({ D }: { D: Dashboard }) {
   const yest = new Date(`${D.today}T00:00:00Z`); yest.setUTCDate(yest.getUTCDate() - 1);
   return <Card title="Monthly workbooks">
     <p className="muted" style={{ margin: '0 0 10px', fontSize: 13.5 }}>The Daily Outlet Report for every outlet, one row a day, filled in from what the outlets entered. Stock, sales by payment mode, credit and the balance checks. A Store ledger tab follows the inventory clerk's ledger for the raw materials, and a Feed tab shows feed milled, bought and given to each house. The current month fills in as the outlets close each day.</p>
-    {first === null ? <div className="spinner" /> : <div className="list">{monthsFrom(first, D.today).map((m) => (
+    {first === null ? <SkelList n={2} /> : <div className="list">{monthsFrom(first, D.today).map((m) => (
       <div className="li" key={m}>
         <span className="av" style={{ background: 'var(--l-farm)' }}><Icon name="list" /></span>
         <div className="mid"><b>{label(m)}</b><small>{m === thisMonth

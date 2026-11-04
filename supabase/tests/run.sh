@@ -18,6 +18,7 @@ $P -d dpv_test -f supabase/tests/10_month_book.sql
 $P -d dpv_test -f supabase/tests/11_store_van.sql
 $P -d dpv_test -f supabase/tests/12_reminders.sql
 $P -d dpv_test -f supabase/tests/13_feed_mill.sql
+$P -d dpv_test -f supabase/tests/14_flocks.sql
 # the digest and completeness engine, on its own database with fixed fixture data (pgTAP)
 $P -d postgres -c "drop database if exists dpv_facts" -c "create database dpv_facts" >/dev/null
 $P -d dpv_facts -f supabase/tests/00_supabase_shim.sql >/dev/null
