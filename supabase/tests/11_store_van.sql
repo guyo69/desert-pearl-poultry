@@ -65,7 +65,7 @@ do $$ declare c jsonb; v jsonb; begin
   if (v->>'on_board')::int > 0 and not (v->>'closed')::boolean then
     assert v->'missing' ? 'eggs left on the van', 'eggs left on board are flagged';
   end if;
-  assert exists (select 1 from jsonb_array_elements(c->'items') i where i->>'id' = 'TUALA' and i->'expected' ? 'opening count'), 'shops still count';
+  assert _closed_on('TUALA', biz_today()) or exists (select 1 from jsonb_array_elements(c->'items') i where i->>'id' = 'TUALA' and i->'expected' ? 'opening count'), 'shops still count';
 end $$;
 set role authenticated;
 

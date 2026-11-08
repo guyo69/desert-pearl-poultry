@@ -24,8 +24,8 @@ const RT = '__Host-dpv_rt';
 const MAX_AGE = 12 * 3600;          // matches the database's 12-hour session limit
 const MAX_BODY = 64 * 1024;
 const AUTH_ACTIONS = new Set(['challenge', 'login', 'status', 'set_password', 'mfa_enroll', 'mfa_confirm', 'mfa_verify',
-  'backup_codes', 'mfa_disable', 'logout', 'logout_all', 'bootstrap']);
-const PUBLIC_AUTH = new Set(['challenge', 'login', 'bootstrap']);
+  'backup_codes', 'mfa_disable', 'logout', 'logout_all', 'bootstrap', 'reset_request', 'reset_confirm', 'recovery_start', 'recovery_confirm']);
+const PUBLIC_AUTH = new Set(['challenge', 'login', 'bootstrap', 'reset_request', 'reset_confirm']);
 const RPC = /^(rpc_[a-z_]{1,40}|dashboard|activity|security_log|data_version|shop_day|gaps)$/;
 
 interface Env { url: string; anon: string; secret: string }

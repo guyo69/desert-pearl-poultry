@@ -75,6 +75,22 @@ describe('sign-in', () => {
     expect(r.headers.get('retry-after')).toBe('900');
   });
 
+  it('lets a forgotten-password reset through without a session, and never sets cookies for it', async () => {
+    upstream = () => ok({ ok: true, message: 'If this account has a recovery email, a 6-digit code is on its way.' });
+    const r = await handler(req('auth/reset_request', { username: 'owner' }));
+    expect(r.status).toBe(200);
+    expect(setCookies(r)).toHaveLength(0);
+    expect(JSON.parse(String(calls[0].init.body))).toMatchObject({ action: 'reset_request', username: 'owner' });
+    expect(hdr(calls[0], 'Authorization')).toBeUndefined();
+    upstream = () => ok({ ok: true });
+    expect((await handler(req('auth/reset_confirm', { username: 'owner', code: 'ABCDE-FGHJK', new_password: 'x' }))).status).toBe(200);
+  });
+
+  it('needs a session to add a recovery email', async () => {
+    const r = await handler(req('auth/recovery_start', { email: 'a@b.co' }));
+    expect(r.status).toBe(401);
+  });
+
   it('rejects unknown auth actions without calling Supabase', async () => {
     const r = await handler(req('auth/delete_everything'));
     expect(r.status).toBe(404);

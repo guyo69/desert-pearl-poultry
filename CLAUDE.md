@@ -60,7 +60,7 @@ Before you push, run `npm test` and `npm run build`. If you touch SQL, also run 
   - `store` (inventory clerk) gets no weekly insights yet.
   - `pos` sees its own outlet, with no cash.
 - **`rpc_weekly_report()`** feeds the Report screen. It covers the last 7 days to yesterday, for the owner and the farm manager only.
-- **There is no email.** The weekly digest, the reminder emails and the opt-out link were repealed on 3 Nov 2026. The old `digest_log` and `nudge_log` tables are kept as history. Do not bring email back without the client asking.
+- **No report email.** The weekly digest, the reminder emails and the opt-out link were repealed on 3 Nov 2026. The old `digest_log` and `nudge_log` tables are kept as history. The only email the app sends is account recovery (below). Do not bring other email back without the client asking.
 
 ## Business rules (from the client, 2 Nov 2026)
 
@@ -98,10 +98,18 @@ Before you push, run `npm test` and `npm run build`. If you touch SQL, also run 
 - **Weekly report** (`src/lib/report.ts`, `src/lib/knowledge.ts`): written as a report, with no "provisional" labels. Records entered come first as a finding and in a Data coverage section; every flock is judged against the Hy-Line Brown performance standard for its age (low end of each published range, projected past 100 weeks) unless the house has a realistic target (a target of 97% or more counts as not set). The server's `weekly_facts` still supplies the numbers; the app writes the words.
 - **Interface:** dropdown options use the app's colours (no white on white in dark mode), text actions (`.lnk`, `.act`) are boxed buttons, loading shows skeletons instead of spinners, and lists, tiles, buttons and tables have hover and press motion (off with reduced motion).
 
+## Account recovery (from the client, 8 Nov 2026)
+
+- **Recovery email:** the owner and farm manager add one under My account (`auth` actions `recovery_start`, `recovery_confirm`: a 6-digit code sent to it). The owner is asked for it after signing in until one is confirmed (`staff.recovery_email`, `recovery_verified_at`).
+- **Forgot password** on the sign-in screen: `reset_request {username}` emails a 6-digit code (15 minutes, at most 3 an hour, the same answer whether or not the account exists); `reset_confirm {username, code, new_password}` checks the policy, sets the password, ends every session and lifts the sign-in lock. Two-step sign-in is still asked at the next sign-in. Both are public gateway actions with their own rate limits (`reset_request`, `reset`).
+- **Break-glass:** `select issue_recovery_code('owner');` in the SQL editor returns a one-use code valid 24 hours (console only: no API role can call it; it is logged). The person uses Forgot password, I already have a code.
+- Codes live in `account_codes` as salted SHA-256 hashes; five wrong tries burn a code. Email goes through Resend: edge-function secrets `RESEND_API_KEY` and `MAIL_FROM` on a verified domain (`_shared/mail.ts`).
+
 ## Open items
 
 - **Tank size:** `settings.tank_capacity_l` is 1,000 L while the farm sheet showed about 3,500 L drunk per house a day. Confirm the real tank size, then record a fresh tank reading.
 - **Lay rates:** both houses have expected lay at 100%. The report now uses the breed guide instead, and says so; set a realistic target with Edit flock. Both flocks are about 110 weeks old (placed Dec 2024 and Jan 2025 at 12 and 14 weeks); set their breed too.
 - **Closed days:** outlets are set as closed on Sunday (`locations.closed_dow = '{7}'`). The client said they would confirm this.
 - **Raw material opening stock:** the app's raw store starts empty. The inventory clerk should count each material once (Count the store) to bring in the ledger's closing stock. The paper ledger's 3 Nov wheat bran opening (6,390 kg) did not follow from the 29 Oct closing (1,273 kg); 5,117 kg was not recorded as a delivery.
+- **Recovery email sending:** the Resend domain studio.sagedesigns.co.ke shows failed verification (DKIM and SPF records). Until it verifies and `RESEND_API_KEY` and `MAIL_FROM` are set, use `issue_recovery_code`.
 - **Later phases:** invoicing and a payment gateway are proposed, not built, and each needs its own scope agreement.

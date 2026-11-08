@@ -7,7 +7,7 @@ import { Icon } from './ui/icons';
 import { UIProvider, useUI } from './ui/ui';
 import { AlertList, AppSkeleton } from './ui/widgets';
 import { ScreenGuard } from './ui/ScreenGuard';
-import { Login, MfaEnroll, MfaVerify, NewPassword } from './views/Auth';
+import { Login, MfaEnroll, MfaVerify, NewPassword, RecoveryEmail } from './views/Auth';
 import { Alerts, Money, Overview, Report, Stock, type ViewProps } from './views/Management';
 import { ClerkHome, Feed, Health, Records, Water } from './views/Farm';
 import { PosMoney, PosSales, PosStock, PosToday } from './views/SalesPoint';
@@ -155,6 +155,24 @@ function Shell({ D, version, err, signOut, reload }: { D: Dashboard; version: nu
   const [drawer, setDrawer] = useState(false);
   const go = (t: string) => { setTab(t); setDrawer(false); try { history.replaceState(null, '', `#${t}`); } catch { /* ignore */ } window.scrollTo(0, 0); };
   useEffect(() => { if (!tabs.includes(tab)) setTab(tabs[0]); }, [tabs, tab]);
+
+  // the owner is asked for a recovery email after signing in, until one is confirmed
+  useEffect(() => {
+    if (D.me.role !== 'owner') return;
+    let later = false;
+    try { later = sessionStorage.getItem('dpv-recovery-later') === '1'; } catch { /* storage blocked */ }
+    if (later) return;
+    authStatus().then((s) => {
+      const r = s.user?.recovery;
+      if (!r || r.email || !r.mail_ready) return;
+      const skip = () => { try { sessionStorage.setItem('dpv-recovery-later', '1'); } catch { /* ignore */ } ui.close(); };
+      ui.openPanel('Add a recovery email', <>
+        <RecoveryEmail onDone={(m) => { ui.close(); ui.toast(`Recovery email confirmed: ${m}.`); }} />
+        <button className="lnk center-t blockc" style={{ marginTop: 12 }} onClick={skip}>Later</button></>);
+    }).catch(() => {});
+    // once per sign-in
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const myAlerts = alertsFor(D);
   const unread = D.notifications.filter((n) => !n.read);

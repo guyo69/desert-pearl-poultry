@@ -13,6 +13,12 @@
 //   mfa_disable { code }              (only where two-step is optional)
 //   logout | logout_all
 //   bootstrap                         (only on an empty system: creates the default team)
+//   reset_request { username }        -> a code to the account's confirmed recovery email (always the same answer)
+//   reset_confirm { username, code, new_password }
+//                                     a code from that email, or one issued from the database console
+//                                     (issue_recovery_code), sets a new password and ends every session
+//   recovery_start { email }          owner and farm manager: send a code to confirm a recovery email
+//   recovery_confirm { code }
 //
 // Every attempt is logged in auth_events. Limits (database: auth_check / auth_record):
 // per IP and action 5 failures per 15 minutes; per account exponential backoff,
@@ -20,13 +26,14 @@
 // a bot check after 3 failures.
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.45.4';
 import {
-  adminClient, anonClient, caller, clientIp, clientUa, derivedPassword, fromGateway, hmacHex,
-  json, jwtPayload, randomHex, readJson, secret, settle, staffEmail, str, type Caller,
+  adminClient, anonClient, caller, clientIp, clientUa, derivedPassword, fromGateway, hex, hmacHex,
+  json, jwtPayload, randomHex, readJson, safeEqual, secret, settle, staffEmail, str, type Caller,
 } from '../_shared/util.ts';
 import { checkPassword, commonListSource } from '../_shared/policy.ts';
 import { b32encode, newBackupCodes, newSecret, normaliseBackupCode, otpauthUri, seal, totpCheck, unseal } from '../_shared/totp.ts';
 import { DEFAULT_TEAM, createStaff } from '../_shared/staff.ts';
 import { checkPuzzle, checkTurnstile, difficulty, makePuzzle, turnstileKeys, type Solution } from '../_shared/challenge.ts';
+import { MailNotConfigured, looksLikeEmail, mailReady, maskEmail, sendAccountMail } from '../_shared/mail.ts';
 
 type Gate = { allowed: boolean; reason: string | null; retry_after: number; captcha: boolean };
 
@@ -109,6 +116,55 @@ const userOf = (c: Caller) => ({
 async function stateOf(db: SupabaseClient, uid: string, sid: string) {
   const { data } = await db.rpc('auth_state', { p_uid: uid, p_sid: sid });
   return data as { state: string };
+}
+
+// ------------------------------------------------------------------------------ one-time codes
+/** Roles that can keep a recovery email and reset their own password with it. */
+const RECOVERY_ROLES = ['owner', 'manager'];
+const MAX_CODE_TRIES = 5;
+
+/** A uniformly random numeric code. */
+function digits(n: number): string {
+  let out = '';
+  while (out.length < n) {
+    const b = crypto.getRandomValues(new Uint8Array(16));
+    for (const x of b) if (x < 250 && out.length < n) out += String(x % 10);
+  }
+  return out;
+}
+const normCode = (c: string) => c.toUpperCase().replace(/[^A-Z0-9]/g, '');
+const codeHash = async (salt: string, code: string) => hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${salt}:${code}`)));
+
+async function storeCode(db: SupabaseClient, staffId: string, purpose: 'reset' | 'verify_email', code: string, minutes: number, email?: string) {
+  await db.from('account_codes').update({ used_at: new Date().toISOString() }).eq('staff_id', staffId).eq('purpose', purpose).is('used_at', null);
+  const salt = randomHex(16);
+  const { error } = await db.from('account_codes').insert({
+    staff_id: staffId, purpose, channel: 'email', email: email ?? null, salt, code_hash: await codeHash(salt, code),
+    expires_at: new Date(Date.now() + minutes * 60_000).toISOString(),
+  });
+  if (error) throw error;
+}
+
+/** Checks a code against the newest live one; a wrong code counts, and five wrong tries burn it. */
+async function takeCode(db: SupabaseClient, staffId: string, purpose: 'reset' | 'verify_email', code: string) {
+  const { data: row } = await db.from('account_codes').select('id, salt, code_hash, attempts, email, channel')
+    .eq('staff_id', staffId).eq('purpose', purpose).is('used_at', null).gt('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (!row) return null;
+  if (!safeEqual(await codeHash(row.salt, normCode(code)), row.code_hash)) {
+    const tries = row.attempts + 1;
+    await db.from('account_codes').update({ attempts: tries, ...(tries >= MAX_CODE_TRIES ? { used_at: new Date().toISOString() } : {}) }).eq('id', row.id);
+    return null;
+  }
+  // claim it once, even if two requests race
+  const { data: claimed } = await db.from('account_codes').update({ used_at: new Date().toISOString() }).eq('id', row.id).is('used_at', null).select('id').maybeSingle();
+  return claimed ? row as { id: number; email: string | null; channel: string } : null;
+}
+
+async function recentCodes(db: SupabaseClient, staffId: string, purpose: string): Promise<number> {
+  const { count } = await db.from('account_codes').select('id', { count: 'exact', head: true }).eq('staff_id', staffId).eq('purpose', purpose)
+    .eq('channel', 'email').gt('created_at', new Date(Date.now() - 3600_000).toISOString());
+  return count ?? 0;
 }
 
 // ----------------------------------------------------------------------------------------------
@@ -197,6 +253,75 @@ Deno.serve(async (req) => {
       return json({ ok: true, created: DEFAULT_TEAM.map((p) => ({ username: p.username, display_name: p.display_name })) });
     }
 
+    // ---------------------------------------------------------------- forgotten password
+    if (action === 'reset_request') {
+      const started = Date.now();
+      const username = str(body.username, 64).trim().toLowerCase();
+      const same = () => json({ ok: true, message: 'If this account has a recovery email, a 6-digit code is on its way. It works for 15 minutes.' });
+      if (username.length < 3) { await settle(started, 900); return json({ error: 'Enter your username.' }, 400); }
+      const g = await gate(db, 'reset_request', ip, username);
+      if (!g.allowed) { await settle(started, 900); return refuse(g); }
+      const { data: s } = await db.from('staff').select('id, username, role, active, recovery_email, recovery_verified_at').eq('username', username).maybeSingle();
+      if (!s || !s.active || !s.recovery_email || !s.recovery_verified_at || !RECOVERY_ROLES.includes(s.role)) {
+        await record(db, req, 'reset_request', username, true, s ? 'no recovery email' : 'unknown_user', s ? { id: s.id, username: s.username } : undefined, false);
+        await settle(started, 900);
+        return same();
+      }
+      const who = { id: s.id, username: s.username };
+      if (await recentCodes(db, s.id, 'reset') >= 3) {
+        await record(db, req, 'reset_request', username, false, 'too many codes this hour', who, false);
+        await settle(started, 900);
+        return same();
+      }
+      const code = digits(6);
+      await storeCode(db, s.id, 'reset', code, 15);
+      try {
+        await sendAccountMail(s.recovery_email, 'Your Desert Pearl password reset code', [
+          `Someone asked to reset the password for ${s.username}.`, 'Your code is:', code,
+          'Enter it on the sign-in screen within 15 minutes, with your new password. The code works once.'], `reset:${s.id}:${code}`);
+        await record(db, req, 'reset_request', username, true, `code sent to ${maskEmail(s.recovery_email)}`, who, false);
+      } catch (e) {
+        await record(db, req, 'reset_request', username, false, e instanceof MailNotConfigured ? 'email not set up' : `send failed: ${String(e).slice(0, 120)}`, who, false);
+      }
+      await settle(started, 900);
+      return same();
+    }
+
+    if (action === 'reset_confirm') {
+      const started = Date.now();
+      const username = str(body.username, 64).trim().toLowerCase();
+      const code = str(body.code, 40), next = str(body.new_password, 200);
+      if (username.length < 3 || normCode(code).length < 6 || !next) { await settle(started); return json({ error: 'Enter your username, the code and a new password.' }, 400); }
+      const g = await gate(db, 'reset', ip, username);
+      if (!g.allowed) { await record(db, req, 'reset', null, false, `refused_${g.reason}`, undefined, false); await settle(started); return refuse(g); }
+      const { data: s } = await db.from('staff').select('id, username, display_name, role, active, recovery_email, recovery_verified_at').eq('username', username).maybeSingle();
+      const bad = async (who?: { id: string; username: string }) => {
+        const r = await record(db, req, 'reset', username, false, 'bad_code', who);
+        await settle(started);
+        return json({ error: r.locked_for > 0 ? `Too many wrong codes. Try again in ${mins(r.locked_for)}.` : 'That code is not right, or it has expired. Ask for a new one.', code: 'BAD_CODE' }, r.locked_for > 0 ? 429 : 400);
+      };
+      if (!s || !s.active) return bad();
+      const verdict = await checkPassword(next, { username: s.username, displayName: s.display_name });
+      if (!verdict.ok) { await settle(started); return json({ error: verdict.problems[0], problems: verdict.problems, code: 'WEAK_PASSWORD' }, 400); }
+      const who = { id: s.id, username: s.username };
+      const used = await takeCode(db, s.id, 'reset', code);
+      if (!used) return bad(who);
+      const { error: e1 } = await db.auth.admin.updateUserById(s.id, { password: await derivedPassword(db, s.id, next) });
+      if (e1) throw e1;
+      await db.from('staff').update({ must_change_password: false, temp_expires_at: null, password_changed_at: new Date().toISOString() }).eq('id', s.id);
+      const { data: ended } = await db.rpc('auth_end_sessions', { p_uid: s.id, p_only: null });
+      // the sign-in lock on this account is lifted: the code proved who it is
+      await db.from('auth_counters').update({ fails: 0, locked_until: null, lock_count: 0, last_fail: null }).eq('key', `sub:login:${s.username}`);
+      await record(db, req, 'reset', username, true, `password reset with a ${used.channel === 'operator' ? 'console' : 'emailed'} code (${ended ?? 0} session(s) ended)`, who);
+      if (s.recovery_email && s.recovery_verified_at) {
+        sendAccountMail(s.recovery_email, 'Your Desert Pearl password was changed', [
+          `The password for ${s.username} was just reset, and every device was signed out.`,
+          'If this was not you, contact Sage Design Lab straight away.'], `changed:${s.id}:${Date.now()}`).catch(() => {});
+      }
+      await settle(started);
+      return json({ ok: true });
+    }
+
     // ---------------------------------------------------------------- everything below needs a session
     const me = await caller(db, req);
     if (action === 'status') {
@@ -205,7 +330,12 @@ Deno.serve(async (req) => {
         return json({ state: 'none', setup_needed: (count ?? 0) === 0 });
       }
       if (['none', 'expired', 'inactive', 'temp_expired'].includes(me.state)) return json({ state: me.state, clear_session: true });
-      return json({ state: me.state, user: userOf(me) });
+      let recovery = null;
+      if (RECOVERY_ROLES.includes(me.staff.role)) {
+        const { data: rr } = await db.from('staff').select('recovery_email, recovery_verified_at').eq('id', me.uid).maybeSingle();
+        recovery = { email: rr?.recovery_verified_at ? maskEmail(rr.recovery_email) : null, mail_ready: mailReady() };
+      }
+      return json({ state: me.state, user: { ...userOf(me), recovery } });
     }
     if (!me || ['none', 'expired', 'inactive'].includes(me.state)) return json({ error: 'Your session has ended. Sign in again.', code: 'SIGNED_OUT', clear_session: true }, 401);
     const who = { id: me.uid, username: me.staff.username };
@@ -327,6 +457,43 @@ Deno.serve(async (req) => {
       await db.from('mfa_factors').delete().eq('staff_id', me.uid);
       await record(db, req, 'otp', me.uid, true, 'two-step sign-in turned off', who);
       return json({ ok: true });
+    }
+
+    // ------------------------------------------------------------ recovery email (owner and farm manager)
+    if (action === 'recovery_start' || action === 'recovery_confirm') {
+      if (me.state !== 'ready') return json({ error: 'Finish signing in first.', code: 'AUTH_' + me.state.toUpperCase() }, 403);
+      if (!RECOVERY_ROLES.includes(me.staff.role)) return json({ error: 'A recovery email is for the owner and the farm manager.' }, 403);
+      if (action === 'recovery_start') {
+        const email = str(body.email, 254).trim().toLowerCase();
+        if (!looksLikeEmail(email)) return json({ error: 'Enter a full email address, like name@gmail.com.' }, 400);
+        if (!mailReady()) return json({ error: 'Email is not set up on the server yet. Sage Design Lab can switch it on.', code: 'MAIL_OFF' }, 503);
+        const g = await gate(db, 'recovery', ip, me.uid);
+        if (!g.allowed) return refuse(g);
+        if (await recentCodes(db, me.uid, 'verify_email') >= 5) return json({ error: 'Too many codes this hour. Try again later.' }, 429);
+        const code = digits(6);
+        await storeCode(db, me.uid, 'verify_email', code, 15, email);
+        try {
+          await sendAccountMail(email, 'Confirm your Desert Pearl recovery email', [
+            `This email is being added to ${me.staff.username} for resetting a forgotten password.`, 'Your code is:', code,
+            'Enter it in the app within 15 minutes.'], `verify:${me.uid}:${code}`);
+        } catch (e) {
+          await record(db, req, 'recovery', me.uid, false, `send failed: ${String(e).slice(0, 120)}`, who, false);
+          return json({ error: 'The email could not be sent. Check the address and try again.' }, 502);
+        }
+        await record(db, req, 'recovery', me.uid, true, `code sent to ${maskEmail(email)}`, who, false);
+        return json({ ok: true, sent_to: maskEmail(email) });
+      }
+      const g = await gate(db, 'otp', ip, me.uid);
+      if (!g.allowed) return refuse(g);
+      const used = await takeCode(db, me.uid, 'verify_email', str(body.code, 20));
+      if (!used || !used.email) {
+        const r = await record(db, req, 'otp', me.uid, false, 'recovery_bad_code', who);
+        return json({ error: r.locked_for ? `Too many wrong codes. Try again in ${mins(r.locked_for)}.` : 'That code is not right, or it has expired.', code: 'BAD_CODE' }, r.locked_for ? 429 : 400);
+      }
+      const { error } = await db.from('staff').update({ recovery_email: used.email, recovery_verified_at: new Date().toISOString() }).eq('id', me.uid);
+      if (error) throw error;
+      await record(db, req, 'recovery', me.uid, true, `recovery email confirmed ${maskEmail(used.email)}`, who, false);
+      return json({ ok: true, email: maskEmail(used.email) });
     }
 
     return json({ error: 'Unknown action.' }, 400);

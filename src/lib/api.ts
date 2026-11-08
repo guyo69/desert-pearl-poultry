@@ -65,7 +65,9 @@ export const loadActivity = (p: { limit?: number; after?: ActivityRow | null; lo
     p_cursor: p.after ? { d: p.after.d, at: p.after.recorded_at, k: p.after.kind, id: p.after.id } : null });
 
 export type AuthState = 'none' | 'expired' | 'inactive' | 'temp_expired' | 'set_password' | 'mfa_enroll' | 'mfa_verify' | 'ready';
-export interface AuthUser { id: string; username: string; display_name: string; role: string; location_id: string | null; mfa_enabled: boolean; mfa_required: boolean; temp_expires_at: string | null }
+export interface AuthUser { id: string; username: string; display_name: string; role: string; location_id: string | null; mfa_enabled: boolean; mfa_required: boolean; temp_expires_at: string | null;
+  /** owner and farm manager: the confirmed recovery email (masked), and whether the server can send email */
+  recovery?: { email: string | null; mail_ready: boolean } | null }
 export interface AuthStatus { state: AuthState; user?: AuthUser; setup_needed?: boolean }
 export const authStatus = () => auth<AuthStatus>('status');
 export const signOut = (everywhere = false) => auth(everywhere ? 'logout_all' : 'logout').catch(() => null);

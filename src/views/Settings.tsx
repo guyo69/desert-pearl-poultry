@@ -1,7 +1,7 @@
 // Account (everyone), plus owner setup: staff, prices & thresholds, houses, opening balances,
 // activity log and the sign-in security log.
 import { useCallback, useEffect, useState } from 'react';
-import { auth, requestReload, rpc, securityLog, staffAdmin, type SecurityEvent } from '../lib/api';
+import { auth, authStatus, requestReload, rpc, securityLog, staffAdmin, type AuthUser, type SecurityEvent } from '../lib/api';
 import { dlabel, dnum, timeOf } from '../lib/format';
 import { disablePush, enablePush, pushStatus } from '../lib/push';
 import type { Settings as S, StaffAdminRow, StaffLite } from '../lib/types';
@@ -10,7 +10,7 @@ import { HousesFlocks } from './Flocks';
 import { Icon } from '../ui/icons';
 import { useUI } from '../ui/ui';
 import { Card, Empty, Seg, SkelList } from '../ui/widgets';
-import { BackupCodes, MfaEnroll, NewPassword } from './Auth';
+import { BackupCodes, MfaEnroll, NewPassword, RecoveryEmail } from './Auth';
 import { RecordList } from './common';
 import { MonthBooks } from './MonthBooks';
 import type { ViewProps } from './Management';
@@ -43,6 +43,9 @@ export function Account({ D, signOut }: { D: ViewProps['D']; signOut: (everywher
     try { if (push === 'on') { await disablePush(); ui.toast('Phone notifications turned off.'); } else { await enablePush(); ui.toast('Phone notifications are on.'); } setPush(await pushStatus()); }
     catch (e) { ui.toast((e as Error).message); }
   };
+  const [rec, setRec] = useState<AuthUser['recovery']>(undefined);
+  useEffect(() => { if (me.role === 'owner' || me.role === 'manager') authStatus().then((s) => setRec(s.user?.recovery ?? null)).catch(() => setRec(null)); }, [me.role]);
+  const recovery = () => ui.openPanel('Recovery email', <RecoveryEmail onDone={(m) => { ui.close(); setRec({ email: m, mail_ready: true }); ui.toast(`Recovery email confirmed: ${m}.`); }} />);
   const user = { username: me.username, display_name: me.display_name, mfa_required: me.mfa_required };
   const changePassword = () => ui.openPanel('Change password',
     <NewPassword forced={false} user={user} onDone={() => { ui.close(); ui.toast('Password changed. Other devices were signed out.'); }} />);
@@ -61,6 +64,9 @@ export function Account({ D, signOut }: { D: ViewProps['D']; signOut: (everywher
       <div className="li"><span className="av" style={{ background: 'var(--primary)' }}><Icon name="key" /></span><div className="mid"><b>Password</b>
         <small>{me.password_changed_at ? `Last changed ${when(me.password_changed_at)}` : 'Set when you first signed in.'}</small></div>
         <button className="btn sm alt" onClick={changePassword}>Change</button></div>
+      {rec !== undefined && rec !== null && <div className="li"><span className="av" style={{ background: rec.email ? 'var(--f-full)' : 'var(--f-low)' }}><Icon name="inbox" /></span><div className="mid"><b>Recovery email</b>
+        <small>{rec.email ? `${rec.email} · a reset code goes here if you forget your password` : rec.mail_ready ? 'Not set. Add one so you can reset a forgotten password.' : 'Email is not switched on yet. Sage Design Lab can issue a recovery code meanwhile.'}</small></div>
+        {rec.mail_ready && <button className="btn sm alt" onClick={recovery}>{rec.email ? 'Change' : 'Add'}</button>}</div>}
       <div className="li"><span className="av" style={{ background: me.mfa_enabled ? 'var(--f-full)' : 'var(--f-low)' }}><Icon name="shield" /></span><div className="mid"><b>Two-step sign-in</b>
         <small>{me.mfa_enabled ? `On · ${me.backup_codes_left} backup code${me.backup_codes_left === 1 ? '' : 's'} left` : 'Off. Adds a code from your phone to every sign-in.'}{me.mfa_required ? ' · required for your role' : ''}</small></div>
         {me.mfa_enabled ? <div className="end"><button className="act" onClick={newCodes}>New codes</button>{!me.mfa_required && <button className="act" onClick={turnOff}>Turn off</button>}</div>

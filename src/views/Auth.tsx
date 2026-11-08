@@ -41,6 +41,13 @@ function Countdown({ until, onEnd }: { until: number; onEnd: () => void }) {
 
 // ------------------------------------------------------------------------------------------ sign in
 export function Login({ setupNeeded, notice, onDone }: { setupNeeded?: boolean; notice?: string; onDone: () => void }) {
+  const [forgot, setForgot] = useState<string | null>(null);
+  const [done, setDone] = useState('');
+  if (forgot !== null) return <ResetPassword username={forgot} onBack={(m) => { setForgot(null); setDone(m ?? ''); }} />;
+  return <SignIn setupNeeded={setupNeeded} notice={done || notice} onDone={onDone} onForgot={setForgot} />;
+}
+
+function SignIn({ setupNeeded, notice, onDone, onForgot }: { setupNeeded?: boolean; notice?: string; onDone: () => void; onForgot: (username: string) => void }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
@@ -118,12 +125,115 @@ export function Login({ setupNeeded, notice, onDone }: { setupNeeded?: boolean; 
       <div className="form-err" role="alert" aria-live="polite">{err}{waiting && <> Try again in <Countdown until={waitUntil} onEnd={() => setWaitUntil(0)} />.</>}</div>
       <button className="btn wide" disabled={busy || waiting}>
         {progress !== null ? `Checking this device… ${Math.round(progress * 100)}%` : busy ? 'Signing in…' : 'Sign in'}</button>
-      <p className="muted small center-t">Forgot your password? Ask the owner to reset it.</p>
+      <button type="button" className="lnk center-t blockc" onClick={() => onForgot(username.trim())}>Forgot password?</button>
     </form>
     {setupNeeded && !created && <div className="card"><h3>First-time setup</h3>
       <p className="muted small">Create the team: Owner, Farm Manager, Production Clerk, Farm Counter, Van Driver and one attendant for each shop.</p>
       <button className="btn alt" disabled={busy} onClick={bootstrap}>{busy ? 'Creating…' : 'Create the team'}</button></div>}
   </AuthPage>;
+}
+
+// ------------------------------------------------------------------------------------------ forgotten password
+/**
+ * Reset with a one-time code: emailed to the account's confirmed recovery email
+ * (owner and farm manager), or given by Sage Design Lab from the server. Everyone
+ * else asks the owner to reset their password.
+ */
+export function ResetPassword({ username: u0, onBack }: { username: string; onBack: (message?: string) => void }) {
+  const [step, setStep] = useState<'ask' | 'set'>('ask');
+  const [username, setUsername] = useState(u0);
+  const [code, setCode] = useState('');
+  const [pw, setPw] = useState('');
+  const [again, setAgain] = useState('');
+  const [info, setInfo] = useState('');
+  const [err, setErr] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const user = { username: username.trim().toLowerCase(), display_name: '' };
+  const send = async (e?: FormEvent) => {
+    e?.preventDefault();
+    if (busy) return;
+    if (username.trim().length < 3) { setErr(['Enter your username.']); return; }
+    setBusy(true); setErr([]);
+    try { const r = await auth<{ message: string }>('reset_request', { username: username.trim() }); setInfo(r.message); setStep('set'); }
+    catch (x) { setErr([msg(x)]); } finally { setBusy(false); }
+  };
+  const reset = async (e: FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+    const bad = rules(pw, { username: user.username }).filter((r) => !r.ok);
+    if (code.replace(/[^a-z0-9]/gi, '').length < 6) { setErr(['Enter the code.']); return; }
+    if (bad.length) { setErr(bad.map((b) => `Missing: ${b.label.toLowerCase()}.`)); return; }
+    if (pw !== again) { setErr(['The two passwords do not match.']); return; }
+    setBusy(true); setErr([]);
+    try {
+      await auth('reset_confirm', { username: username.trim(), code, new_password: pw });
+      setPw(''); setAgain('');
+      onBack('Your password was reset and every device was signed out. Sign in with the new password.');
+    } catch (x) {
+      const ex = x as AppError;
+      setErr(Array.isArray(ex.data?.problems) && ex.data.problems.length ? ex.data.problems : [msg(x)]);
+    } finally { setBusy(false); }
+  };
+  return <AuthPage title="Reset your password" sub="With a one-time code" back={() => onBack()}>
+    {step === 'ask' ? <form className="card authform" onSubmit={send} noValidate>
+      <label className="fld" htmlFor="ru"><span>Username</span>
+        <div className="inp"><input id="ru" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={64} autoFocus /></div></label>
+      <p className="muted small">The owner and the farm manager can get a code by email, sent to the recovery email they added under My account. Everyone else: ask the owner or farm manager to reset your password.</p>
+      {err.length > 0 && <div className="form-err" role="alert">{err.join(' ')}</div>}
+      <button className="btn wide" disabled={busy}>{busy ? 'Sending…' : 'Email me a code'}</button>
+      <button type="button" className="lnk center-t blockc" onClick={() => { if (username.trim().length < 3) { setErr(['Enter your username.']); return; } setErr([]); setInfo(''); setStep('set'); }}>I already have a code</button>
+    </form> : <form className="card authform" onSubmit={reset} noValidate>
+      {info && <div className="banner info"><div><p style={{ margin: 0 }}>{info}</p></div></div>}
+      <input type="text" name="username" autoComplete="username" value={user.username} readOnly hidden />
+      <label className="fld" htmlFor="rc"><span>Code</span>
+        <div className="inp"><input id="rc" className="otp" value={code} onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 12))}
+          autoComplete="one-time-code" autoCapitalize="characters" autoCorrect="off" spellCheck={false} placeholder="123456" autoFocus /></div></label>
+      <PasswordField id="rnew" label="New password" value={pw} onChange={setPw} autoComplete="new-password" />
+      <StrengthMeter pw={pw} user={user} />
+      <PasswordField id="ragain" label="New password again" value={again} onChange={setAgain} autoComplete="new-password" invalid={Boolean(again) && again !== pw} />
+      {err.length > 0 && <div className="form-err" role="alert">{err.map((x) => <div key={x}>{x}</div>)}</div>}
+      <button className="btn wide" disabled={busy}>{busy ? 'Checking…' : 'Reset password'}</button>
+      <p className="muted small">A code works once. An emailed code lasts 15 minutes; a code from Sage Design Lab lasts 24 hours. Two-step sign-in, if it is on, is still asked for when you sign in.</p>
+      <button type="button" className="lnk center-t blockc" onClick={() => { setStep('ask'); setErr([]); }}>Send a new code</button>
+    </form>}
+  </AuthPage>;
+}
+
+/** Add or change the recovery email: a code is sent to it, and it counts once the code is entered. */
+export function RecoveryEmail({ onDone }: { onDone: (masked: string) => void }) {
+  const [email, setEmail] = useState('');
+  const [sentTo, setSentTo] = useState('');
+  const [code, setCode] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const send = async (e?: FormEvent) => {
+    e?.preventDefault();
+    if (busy) return;
+    setBusy(true); setErr('');
+    try { const r = await auth<{ sent_to: string }>('recovery_start', { email: email.trim() }); setSentTo(r.sent_to); setCode(''); }
+    catch (x) { setErr(msg(x)); } finally { setBusy(false); }
+  };
+  const confirm = async (e: FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true); setErr('');
+    try { const r = await auth<{ email: string }>('recovery_confirm', { code }); onDone(r.email); }
+    catch (x) { setErr(msg(x)); } finally { setBusy(false); }
+  };
+  if (!sentTo) return <form className="authform" onSubmit={send} noValidate>
+    <p className="muted small" style={{ marginTop: 0 }}>If you ever forget your password, a reset code is sent here. Use an email only you can open.</p>
+    <label className="fld" htmlFor="remail"><span>Recovery email</span>
+      <div className="inp"><input id="remail" type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} maxLength={254} autoFocus placeholder="name@gmail.com" /></div></label>
+    <div className="form-err" role="alert">{err}</div>
+    <button className="btn wide" disabled={busy || !email.trim()}>{busy ? 'Sending…' : 'Send a code'}</button>
+  </form>;
+  return <form className="authform" onSubmit={confirm} noValidate>
+    <p className="muted small" style={{ marginTop: 0 }}>A 6-digit code went to <b>{sentTo}</b>. It lasts 15 minutes. Check the spam folder if it is not in the inbox.</p>
+    <CodeInput value={code} onChange={setCode} />
+    <div className="form-err" role="alert">{err}</div>
+    <button className="btn wide" disabled={busy || code.length !== 6}>{busy ? 'Checking…' : 'Confirm'}</button>
+    <button type="button" className="lnk center-t blockc" onClick={() => setSentTo('')}>Use a different email</button>
+  </form>;
 }
 
 // ------------------------------------------------------------------------------------------ passwords
