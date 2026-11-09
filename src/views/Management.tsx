@@ -30,7 +30,7 @@ export function Overview({ D, go, version }: ViewProps) {
   const nGaps = gaps?.length ? 1 : 0;
   return <>
     <div className="sample"><div><h2>{dlabel(D.today)}</h2><div className="muted">{D.me.role === 'owner' ? 'All five sales points' : 'Central Farm and sales points'} · {n0(hensNow(D))} hens</div></div></div>
-    <div className="kpis">
+    <div className="kpis" data-tip="today">
       <Kpi label="Eggs collected today" value={eggs(cT)} sub={`Yesterday ${eggs(cY)}`} />
       <Kpi label="Lay rate · 7 days" value={pct(layRate(D, w1))} sub={<><Delta a={layRate(D, w1)} b={layRate(D, w0)} pts /> vs week before</>} />
       <Kpi label="Sales today" value={kes(sT.value)} sub={`Yesterday ${kes(sY.value)}`} />
@@ -209,7 +209,7 @@ export function Report({ D, version }: ViewProps) {
       </div>
       {err ? <p className="lead">{err}</p> : W.summary.map((t, i) => <p className="lead" key={i}>{t}</p>)}
     </Card>
-    <Card title="Key findings" aside={<span className="muted">{W.findings.filter((x) => x.sev !== 'ok' && x.sev !== 'info').length} need attention</span>}>
+    <Card tip="findings" title="Key findings" aside={<span className="muted">{W.findings.filter((x) => x.sev !== 'ok' && x.sev !== 'info').length} need attention</span>}>
       {W.findings.length ? W.findings.map((x, i) => <div className="finding" key={i}>
         <span style={{ background: sevVar(SEVC[x.sev] ?? 'ok') }} />
         <b>{x.title}<em className="area">{x.area}</em></b>

@@ -15,6 +15,7 @@ import { StoreHome, StoreItems, StoreRecords } from './views/Store';
 import { Mill } from './views/Mill';
 import { Account, Activity, Setup } from './views/Settings';
 import { NoticeList } from './views/common';
+import { TipHost, openHelp, openSearch } from './ui/Help';
 
 type Tab = { label: string; icon: string; view: (p: ViewProps & { signOut: (everywhere?: boolean) => void }) => ReactNode };
 const TABS: Record<string, Tab> = {
@@ -188,17 +189,27 @@ function Shell({ D, version, err, signOut, reload }: { D: Dashboard; version: nu
     : D.me.role === 'pos' ? { icon: 'plus', label: 'Sale', f: () => ui.openForm(saleForm(D, D.me.location_id!)) } : null;
   const title = TABS[tab].label === 'Home' || TABS[tab].label === 'Today' ? loc?.name ?? 'Desert Pearl' : TABS[tab].label;
   const props = { D, version, go, signOut };
+  const tabInfo = [...tabs, ...(tabs.includes('me') || tabs.includes('settings') ? [] : ['me'])].map((k) => ({ key: k, label: TABS[k].label, icon: TABS[k].icon }));
+  const help = { D, ui, go, tabs: tabInfo };
+  // Ctrl+K (or Cmd+K) opens Search from anywhere
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openSearch(help); } };
+    addEventListener('keydown', k);
+    return () => removeEventListener('keydown', k);
+  });
 
   return <>
     {!online && <div className="offline">Offline: showing the last figures loaded. Records can be saved again once the connection is back.</div>}
     <header className="appbar"><div className="appbar-in">
       <button className="iconbtn" onClick={() => setDrawer(true)} aria-label="Menu"><Icon name="menu" /></button>
       <div className="ttl"><b>{title}</b><small>{[D.me.display_name, D.me.display_name.includes(ROLE_NAME[D.me.role]) || D.me.display_name === ROLE_NAME[D.me.role] ? '' : ROLE_NAME[D.me.role], loc?.name].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).join(' · ')}</small></div>
-      <button className="iconbtn" onClick={openBell} aria-label="Alerts">{<Icon name="bell" />}{myAlerts.length + unread.length > 0 && <span className="badge">{myAlerts.length + unread.length}</span>}</button>
+      <button className="iconbtn" onClick={() => openSearch(help)} aria-label="Search" data-tip="search"><Icon name="search" /></button>
+      <button className="iconbtn" onClick={() => openHelp(help, tab)} aria-label="Help" data-tip="help"><Icon name="help" /></button>
+      <button className="iconbtn" onClick={openBell} aria-label="Alerts" data-tip="bell">{<Icon name="bell" />}{myAlerts.length + unread.length > 0 && <span className="badge">{myAlerts.length + unread.length}</span>}</button>
     </div></header>
     <div className="shell">
       <nav className="rail" aria-label="Sections"><div className="rail-loc">{loc?.name ?? 'All locations'}</div>
-        {tabs.map((t) => <button key={t} aria-current={tab === t} onClick={() => go(t)}><Icon name={TABS[t].icon} />{TABS[t].label}</button>)}
+        {tabs.map((t) => <button key={t} aria-current={tab === t} onClick={() => go(t)} data-tip={`tab:${t}`}><Icon name={TABS[t].icon} />{TABS[t].label}</button>)}
         {!tabs.includes('me') && !tabs.includes('settings') && <button onClick={() => go('me')}><Icon name="user" />My account</button>}</nav>
       <main key={tab}>
         {D.me.backup_codes_left !== undefined && D.me.mfa_enabled && D.me.backup_codes_left <= 2 && tab !== 'me' && <div className="banner warn"><div><b>{D.me.backup_codes_left} backup code{D.me.backup_codes_left === 1 ? '' : 's'} left</b><p>Make a new set so you can still sign in if your phone is lost.</p></div><button className="btn sm" onClick={() => go('me')}>My account</button></div>}
@@ -206,8 +217,9 @@ function Shell({ D, version, err, signOut, reload }: { D: Dashboard; version: nu
         <ScreenGuard name={tabs.includes(tab) || tab === 'me' ? tab : tabs[0]}>{(tabs.includes(tab) || tab === 'me' ? TABS[tab] : TABS[tabs[0]]).view(props)}</ScreenGuard>
       </main>
     </div>
-    <nav className="bnav" aria-label="Sections">{tabs.slice(0, 5).map((t) => <button key={t} aria-current={tab === t} onClick={() => go(t)}><span className="pill"><Icon name={TABS[t].icon} /></span><span>{TABS[t].label}</span></button>)}</nav>
-    {fab && <button className="fab" onClick={fab.f}><Icon name={fab.icon} />{fab.label}</button>}
+    <nav className="bnav" aria-label="Sections">{tabs.slice(0, 5).map((t) => <button key={t} aria-current={tab === t} onClick={() => go(t)} data-tip={`tab:${t}`}><span className="pill"><Icon name={TABS[t].icon} /></span><span>{TABS[t].label}</span></button>)}</nav>
+    <TipHost D={D} tab={tab} paused={drawer || !online} />
+    {fab && <button className="fab" onClick={fab.f} data-tip="fab"><Icon name={fab.icon} />{fab.label}</button>}
     {drawer && <div className="drawer" onClick={(e) => { if (e.target === e.currentTarget) setDrawer(false); }}>
       <nav><div className="dh"><b>{D.me.display_name}</b><small>{ROLE_NAME[D.me.role]}{loc ? ` · ${loc.name}` : ''}</small></div>
         {tabs.map((t) => <button key={t} onClick={() => go(t)}><Icon name={TABS[t].icon} />{TABS[t].label}</button>)}

@@ -10,15 +10,15 @@ export const sevClass = (s: Sev | 'ok') => `sev-${s}`;
 export function Kpi({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
   return <div className="kpi"><div className="lbl">{label}</div><div className="val">{value}</div>{sub != null && <div className="sub">{sub}</div>}</div>;
 }
-export function Card({ title, aside, children, style }: { title?: ReactNode; aside?: ReactNode; children: ReactNode; style?: React.CSSProperties }) {
-  return <section className="card" style={style}>{(title || aside) && <div className="card-h"><h3>{title}</h3>{aside}</div>}{children}</section>;
+export function Card({ title, aside, children, style, tip }: { title?: ReactNode; aside?: ReactNode; children: ReactNode; style?: React.CSSProperties; tip?: string }) {
+  return <section className="card" style={style} data-tip={tip}>{(title || aside) && <div className="card-h"><h3>{title}</h3>{aside}</div>}{children}</section>;
 }
 export const LocDot = ({ id }: { id: string }) => <span className="locdot" style={{ background: `var(${locColor(id)})` }} />;
 export function Legend({ items }: { items: [string, string][] }) {
   return <div className="legend">{items.map(([c, l]) => <span key={l}><i style={{ background: c.startsWith('--') ? `var(${c})` : c }} />{l}</span>)}</div>;
 }
 export function Tile({ icon, label, color, onClick }: { icon: string; label: string; color: string; onClick: () => void }) {
-  return <button className="tile" onClick={onClick}><span className="ic" style={{ background: `var(${color})` }}><Icon name={icon} /></span>{label}</button>;
+  return <button className="tile" onClick={onClick} data-tip={`tile:${label}`}><span className="ic" style={{ background: `var(${color})` }}><Icon name={icon} /></span>{label}</button>;
 }
 export function Empty({ children }: { children: ReactNode }) { return <div className="empty">{children}</div>; }
 export function Delta({ a, b, invert, pts }: { a: number; b: number; invert?: boolean; pts?: boolean }) {

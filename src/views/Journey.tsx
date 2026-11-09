@@ -17,11 +17,11 @@ interface Step { label: string; detail: string; done: boolean; optional?: boolea
 function Steps({ title, steps, aside }: { title: string; steps: Step[]; aside?: ReactNode }) {
   const left = steps.filter((s) => !s.done && !s.optional).length;
   const next = steps.find((s) => !s.done && !s.optional);
-  return <Card title={title} aside={aside ?? <span className={`chip ${left ? 'sev-info' : 'sev-ok'}`}>{left ? `${left} to do` : 'All done'}</span>}>
+  return <Card tip="steps" title={title} aside={aside ?? <span className={`chip ${left ? 'sev-info' : 'sev-ok'}`}>{left ? `${left} to do` : 'All done'}</span>}>
     <ol className="steps">{steps.map((s, i) => <li key={i} className={`${s.done ? 'done' : ''}${s === next ? ' next' : ''}`}>
       <span className="tick" aria-hidden>{s.done ? <Icon name="check" /> : i + 1}</span>
       <div className="mid"><b>{s.label}{s.optional && !s.done ? <em> · if any</em> : null}</b><small>{s.detail}</small></div>
-      {s.go && <button className={`btn sm${s === next ? '' : ' alt'}`} onClick={s.go}>{s.act ?? (s.done ? 'Add more' : 'Start')}</button>}
+      {s.go && <button className={`btn sm${s === next ? '' : ' alt'}`} onClick={s.go} data-tip={`step:${s.label}`}>{s.act ?? (s.done ? 'Add more' : 'Start')}</button>}
     </li>)}</ol>
   </Card>;
 }
@@ -125,7 +125,7 @@ export function MissingDays({ D, gaps }: { D: Dashboard; gaps: Gap[] | null }) {
   if (!gaps?.length) return null;
   const shown = all ? gaps : gaps.slice(0, 5);
   const open = (g: Gap) => ui.openForm(g.scope === 'outlet' ? (isVan(D, g.id) ? dispatchForm(D, g.id, { leftover: true }) : shopDayForm(D, g.id, g.day)) : houseDayForm(D, g.day));
-  return <Card title="Days with gaps" aside={<span className="chip sev-amber">{gaps.length}</span>}>
+  return <Card tip="gaps" title="Days with gaps" aside={<span className="chip sev-amber">{gaps.length}</span>}>
     <p className="muted" style={{ margin: '0 0 8px', fontSize: 13.5 }}>{gapSummary(gaps)}.{canEnter(D) ? ' Fill a missed day from the paper book, or mark an outlet closed.' : ' The farm manager or the person on duty fills these in.'}</p>
     <div className="list">{shown.map((g) => <div className="li" key={`${g.day}-${g.scope}-${g.id}`}>
       <span className="av" style={{ background: 'var(--f-watch)' }}><Icon name="clock" /></span>

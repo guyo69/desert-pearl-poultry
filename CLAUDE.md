@@ -105,11 +105,18 @@ Before you push, run `npm test` and `npm run build`. If you touch SQL, also run 
 - **Break-glass:** `select issue_recovery_code('owner');` in the SQL editor returns a one-use code valid 24 hours (console only: no API role can call it; it is logged). The person uses Forgot password, I already have a code.
 - Codes live in `account_codes` as salted SHA-256 hashes; five wrong tries burn a code. Email goes through Resend: edge-function secrets `RESEND_API_KEY` and `MAIL_FROM` on a verified domain (`_shared/mail.ts`).
 
+## In-app help (from the client, 9 Nov 2026)
+
+- **Tips on the real buttons** (`src/ui/Help.tsx` `TipHost`): one at a time, each a short line pointing at an element tagged `data-tip` (tiles get `tile:<label>`, nav buttons `tab:<key>`, step buttons `step:<label>`, plus `steps`, `gaps`, `mill`, `houses`, `today`, `findings`, `search`, `help`, `fab`). A tip shows only when its element is on screen and nothing is open on top; order follows each role's day. Seen tips are kept per person (`staff.tips_seen`, `rpc_tips(add, reset)`), so a new phone does not replay them. Help, Show me around replays the current screen's tips.
+- **Help button** (top bar, every screen): How to (role tasks in daily order, each with Open it), Questions (role FAQs), Show me around, Search.
+- **Search** (top bar, or Ctrl+K): screens, actions that open the form directly, and help answers, filtered by role and by `canEnter`.
+- **One source:** `src/lib/help.ts` holds the tips, tasks and questions for each role (`pos`, `van`, `clerk`, `store`, `manager`, `owner`); `tests/help.test.ts` keeps tips short and every how-to linked to a real action. When a feature is added, add its tip there with a new id: only that tip shows to people who saw the rest.
+
 ## Open items
 
 - **Tank size:** `settings.tank_capacity_l` is 1,000 L while the farm sheet showed about 3,500 L drunk per house a day. Confirm the real tank size, then record a fresh tank reading.
 - **Lay rates:** both houses have expected lay at 100%. The report now uses the breed guide instead, and says so; set a realistic target with Edit flock. Both flocks are about 110 weeks old (placed Dec 2024 and Jan 2025 at 12 and 14 weeks); set their breed too.
 - **Closed days:** outlets are set as closed on Sunday (`locations.closed_dow = '{7}'`). The client said they would confirm this.
 - **Raw material opening stock:** the app's raw store starts empty. The inventory clerk should count each material once (Count the store) to bring in the ledger's closing stock. The paper ledger's 3 Nov wheat bran opening (6,390 kg) did not follow from the 29 Oct closing (1,273 kg); 5,117 kg was not recorded as a delivery.
-- **Recovery email sending:** the Resend domain studio.sagedesigns.co.ke shows failed verification (DKIM and SPF records). Until it verifies and `RESEND_API_KEY` and `MAIL_FROM` are set, use `issue_recovery_code`.
+- **Recovery email sending:** the Resend domain studio.sagedesigns.co.ke is verified and the secrets are set (9 Nov 2026). The API key was shown in a screenshot: rotate it in Resend and set the new one.
 - **Later phases:** invoicing and a payment gateway are proposed, not built, and each needs its own scope agreement.

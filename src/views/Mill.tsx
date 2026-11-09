@@ -26,7 +26,7 @@ export function MillCard({ D, compact, go }: { D: Dashboard; compact?: boolean; 
   const sub = !m.started ? 'Record what is in the store with Count the store, then deliveries and millings as they happen.'
     : `${m.limit ? `${m.limit.name} runs out first` : ''}${m.days != null ? ` · about ${n0(m.days)} day${Math.round(m.days) === 1 ? '' : 's'} at ${t1(m.rate)} tonnes a day` : ''}${m.todayTonnes ? ` · ${t1(m.todayTonnes)} tonnes milled today` : ''}`;
   const low = m.started && m.cap < m.batch;
-  return <Card title="Raw material store" aside={go ? <button className="lnk" onClick={() => go('mill')}>Feed mill</button> : <span className="muted">{m.mats.length} materials</span>}>
+  return <Card tip={compact ? undefined : 'mill'} title="Raw material store" aside={go ? <button className="lnk" onClick={() => go('mill')}>Feed mill</button> : <span className="muted">{m.mats.length} materials</span>}>
     <div className={`banner ${low ? 'warn' : 'info'}`} style={{ margin: '0 0 10px' }}><div><b>{head}</b><p>{sub}{low && m.started ? `. A usual batch is ${t1(m.batch)} tonnes.` : ''}</p></div></div>
     {!m.recipeOk && <div className="banner warn" style={{ margin: '0 0 10px' }}><div><b>The recipe adds up to {n0(m.recipeKg)} kg</b><p>It must be 1,000 kg a tonne before anything can be milled. The farm manager fixes it under Feed mill.</p></div></div>}
     {!compact && <div className="list">{m.mats.map((x) => {

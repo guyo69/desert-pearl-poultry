@@ -17,7 +17,7 @@ export function HousesFlocks({ D }: { D: Dashboard }) {
   const ui = useUI(), [old, setOld] = useState(false), can = canFlock(D), mgmt = D.me.role === 'owner' || D.me.role === 'manager';
   const past = (D.flocks ?? []).filter((f) => f.ended_on).sort((a, b) => b.placed_on.localeCompare(a.placed_on));
   const houseName = (id: string) => D.houses.find((h) => h.id === id)?.name ?? id;
-  return <Card title="Houses and flocks" aside={can ? <div className="row-btns">
+  return <Card tip="houses" title="Houses and flocks" aside={can ? <div className="row-btns">
       <button className="lnk" onClick={() => ui.openForm(flockForm(D))}><Icon name="bird" />New flock</button>
       <button className="lnk" onClick={() => ui.openForm(houseNewForm(D))}><Icon name="plus" />Add house</button></div> : undefined}>
     {D.houses.length ? <div className="list">{D.houses.map((h) => { const empty = !(h.birds_at_start > 0);

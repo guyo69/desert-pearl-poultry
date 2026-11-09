@@ -1,6 +1,8 @@
 // 24px stroke icons.
 const P: Record<string, JSX.Element> = {
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
+  search: <><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" /></>,
+  help: <><circle cx="12" cy="12" r="9" /><path d="M9.4 9.3a2.7 2.7 0 0 1 5.2.9c0 1.8-2.6 2.3-2.6 3.9M12 17.2h.01" /></>,
   bell: <><path d="M6 9a6 6 0 1 1 12 0c0 6.5 2.5 8 2.5 8h-17S6 15.5 6 9z" /><path d="M10 20.5a2.2 2.2 0 0 0 4 0" /></>,
   egg: <path d="M12 3C8.2 3 5.5 8.6 5.5 13a6.5 6.5 0 0 0 13 0C18.5 8.6 15.8 3 12 3z" />,
   crack: <><path d="M12 3C8.2 3 5.5 8.6 5.5 13a6.5 6.5 0 0 0 13 0C18.5 8.6 15.8 3 12 3z" /><path d="M7 12l2.5 1.5L11 11l2 2.5 1.6-1.6L17 13" /></>,

@@ -524,3 +524,52 @@ select,select option,select optgroup{background-color:var(--surface);color:var(-
 .rep-note{font-size:12.5px;color:var(--muted);margin:10px 0 0;max-width:90ch}
 .cov{height:8px;border-radius:99px;background:var(--fill);overflow:hidden;margin:0 0 12px}
 .cov span{display:block;height:100%;border-radius:99px;background:var(--f-watch);transition:width .6s var(--ease)}
+
+/* ===================================================================
+   9 Nov 2026: help tips, the Help panel and Search
+   =================================================================== */
+.tip-layer{position:fixed;inset:0;z-index:60;pointer-events:none}
+.tip-spot{position:fixed;border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.38),0 0 0 3px var(--accent);transition:top .25s var(--ease),left .25s var(--ease),width .25s var(--ease),height .25s var(--ease);
+  animation:tipIn .3s var(--ease) both}
+.tip-bubble{position:fixed;pointer-events:auto;background:var(--surface);color:var(--fg);border-radius:16px;padding:14px 16px 12px;box-shadow:var(--shadow-lift),0 0 0 .5px var(--line);
+  animation:tipPop .32s var(--ease) both}
+.tip-bubble b{display:block;font-size:16px;font-weight:650;letter-spacing:-.015em}
+.tip-bubble p{margin:4px 0 10px;color:var(--muted);font-size:14.5px;line-height:1.4}
+.tip-arrow{position:absolute;width:14px;height:14px;background:var(--surface);transform:translateX(-50%) rotate(45deg);border-radius:3px}
+.tip-bubble.below .tip-arrow{top:-6px}
+.tip-bubble.above .tip-arrow{bottom:-6px}
+.tip-foot{display:flex;align-items:center;gap:10px}
+.tip-foot small{color:var(--faint);font-size:12.5px;margin-right:auto;font-variant-numeric:tabular-nums}
+.tip-skip{background:none;border:0;color:var(--muted);font-size:14px;padding:6px 4px;border-radius:8px}
+.tip-skip:hover{color:var(--fg)}
+@keyframes tipIn{from{opacity:0}}
+@keyframes tipPop{from{opacity:0;transform:translateY(6px) scale(.97)}}
+
+.help{display:flex;flex-direction:column;gap:12px}
+.help-top{display:flex;flex-direction:column;gap:10px}
+.help-tasks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.help-tasks>li{background:var(--inset);border-radius:12px;overflow:hidden}
+.help-q{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;padding:11px 12px;text-align:left;font-weight:600;font-size:15px;color:var(--fg)}
+.help-q .n{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--tint);color:var(--accent);font-size:12.5px;font-weight:700;flex:none}
+.help-q svg{margin-left:auto;width:16px;height:16px;transform:rotate(-90deg);transition:transform .2s var(--ease);color:var(--muted)}
+.help-tasks>li.open .help-q svg{transform:rotate(90deg)}
+.help-a{padding:0 12px 12px 46px;animation:rowIn .25s var(--ease) both}
+.help-a ol,.help-steps{margin:0 0 10px;padding-left:18px;color:var(--fg);font-size:14.5px;line-height:1.5}
+.help-a li+li,.help-steps li+li{margin-top:3px}
+.help-faq details{border-bottom:.5px solid var(--line);padding:10px 2px}
+.help-faq summary{cursor:pointer;font-weight:600;font-size:15px;list-style:none}
+.help-faq summary::-webkit-details-marker{display:none}
+.help-faq summary::before{content:"+";display:inline-block;width:18px;color:var(--accent);font-weight:700}
+.help-faq details[open] summary::before{content:"\2212"}
+.help-faq p{margin:6px 0 0 18px;color:var(--muted);font-size:14.5px}
+.search{display:flex;flex-direction:column;gap:12px}
+.search-in{padding-left:12px}
+.search-in svg{color:var(--muted)}
+.search-ideas{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.search-g h4{margin:4px 0 2px;font-size:12.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.search-hit{width:100%;border:0;background:none;text-align:left;border-radius:12px;padding:8px;color:var(--fg)}
+.search-hit::before{display:none}
+.search-hit.sel{background:var(--fill)}
+.search-hit .mid small{white-space:nowrap}
+.search-keys{margin:0}
+@media (hover:none){.search-keys{display:none}}
