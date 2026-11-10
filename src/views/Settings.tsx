@@ -74,6 +74,9 @@ export function Account({ D, signOut }: { D: ViewProps['D']; signOut: (everywher
       <div className="li"><span className="av" style={{ background: 'var(--info)' }}><Icon name="bell" /></span><div className="mid"><b>Phone notifications</b>
         <small>{push === 'on' ? 'On for this phone.' : push === 'denied' ? 'Blocked in the browser settings.' : push === 'unsupported' ? 'Not available here. On iPhone, add the app to the Home Screen first.' : 'Alerts such as low feed arrive even when the app is closed.'}</small></div>
         {push !== 'unsupported' && push !== 'denied' && <button className="btn sm alt" onClick={togglePush}>{push === 'on' ? 'Turn off' : 'Turn on'}</button>}</div>
+      <div className="li"><span className="av" style={{ background: 'var(--accent)' }}><Icon name="list" /></span><div className="mid"><b>Forms</b>
+        <small>{ui.stepped ? 'One question at a time, with a check before saving.' : 'Every question on one page.'}</small></div>
+        <button className="btn sm alt" onClick={() => { ui.setStepped(!ui.stepped); ui.toast(ui.stepped ? 'Forms now show every question on one page.' : 'Forms now ask one question at a time.'); }}>{ui.stepped ? 'All on one page' : 'One at a time'}</button></div>
       <div className="li"><span className="av" style={{ background: 'var(--muted)' }}><Icon name="logout" /></span><div className="mid"><b>Sign out</b><small>Sessions end by themselves after 12 hours.</small></div>
         <div className="end"><button className="act" onClick={() => signOut(false)}>This device</button><button className="act" onClick={() => signOut(true)}>Everywhere</button></div></div>
     </div></Card>;

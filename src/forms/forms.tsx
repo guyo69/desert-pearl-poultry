@@ -52,6 +52,7 @@ const over = (q: Q, have: Q): string | null => {
 
 /* ---------------- production clerk ---------------- */
 export const collectForm = (D: Dashboard): FormSpec => ({
+  again: true,
   title: 'Egg collection',
   intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Grade the eggs as you collect. Damaged / broken eggs count towards production but never go into stock.</p>,
   fields: [
@@ -99,6 +100,7 @@ export function houseDayForm(D: Dashboard, day?: string): FormSpec {
              age: houseAge({ ...D, today: day }, h) };
   });
   return {
+    steps: false,
     title: 'Daily house sheet',
     intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>The farm book in one go: eggs by grade, deaths and water for each house (feed comes from the store). Leave a house blank if nothing is new. Age, hens and lay rate fill in by themselves.</p>,
     fields, submit: 'Save the day',
@@ -174,6 +176,7 @@ export function feedInForm(D: Dashboard): FormSpec {
 
 export function waterIntakeForm(D: Dashboard): FormSpec {
   return {
+    again: true,
     title: 'Water drunk',
     intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Record the litres each house drank (meter difference, or litres put in the drinkers). Enter once a day, or after each refill.</p>,
     fields: [
@@ -277,6 +280,7 @@ export function medForm(D: Dashboard, opts: { startNew?: boolean } = {}): FormSp
 }
 
 export const mortForm = (D: Dashboard): FormSpec => ({
+  again: true,
   title: 'Mortality',
   fields: [
     { type: 'select', id: 'house', label: 'House', options: houseOpts(D) },
@@ -299,6 +303,7 @@ const store = (action: string, p: Record<string, unknown>) => rpc<{ id: number; 
 export function storeFeedInForm(D: Dashboard): FormSpec {
   const f = feedInfo(D), kgBag = D.settings.bag_kg;
   return {
+    again: true,
     title: 'Feed received',
     intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Count the bags as they come off the lorry. Payment is recorded by the farm manager.</p>,
     fields: [
@@ -319,6 +324,7 @@ export function storeFeedIssueForm(D: Dashboard): FormSpec {
   const f = feedInfo(D), kgBag = D.settings.bag_kg;
   const kgOf = (v: V) => (v.bags || 0) * kgBag + (v.kg || 0);
   return {
+    again: true,
     title: 'Issue feed to a house',
     fields: [
       { type: 'select', id: 'house', label: 'House', options: houseIdOpts(D) },
@@ -343,6 +349,7 @@ export function storeMedInForm(D: Dashboard, opts: { startNew?: boolean } = {}):
   const active = D.medicines.filter((m) => m.active).sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
   const isNew = (v: V) => v.med === NEW;
   return {
+    again: true,
     title: 'Medicine received',
     fields: [
       { type: 'select', id: 'med', label: 'Item', options: [...active.map((m): [string, string] => [String(m.id), `${m.category} · ${m.name} (${n0(m.stock)} ${m.unit})`]), [NEW, '+ New item: not listed yet']],
@@ -376,6 +383,7 @@ export function storeMedInForm(D: Dashboard, opts: { startNew?: boolean } = {}):
 export function storeMedIssueForm(D: Dashboard): FormSpec {
   const active = D.medicines.filter((m) => m.active && m.stock > 0).sort((a, b) => a.name.localeCompare(b.name));
   return {
+    again: true,
     title: 'Issue medicine to a house',
     fields: [
       { type: 'select', id: 'med', label: 'Item', options: [['', 'Choose an item'], ...active.map((m): [string, string] => [String(m.id), `${m.name} (${n0(m.stock)} ${m.unit} in store)`])] },
@@ -400,6 +408,7 @@ export function supplyInForm(D: Dashboard, pick?: Supply): FormSpec {
   const list = (D.supplies ?? []).filter((x) => x.active);
   const isNew = (v: V) => v.item === NEW;
   return {
+    again: true,
     title: 'Supplies received',
     fields: [
       { type: 'select', id: 'item', label: 'Item', options: [...list.map((x): [string, string] => [String(x.id), `${x.name} (${n0(x.stock)} ${x.unit})`]), [NEW, '+ New item: not listed yet']],
@@ -432,6 +441,7 @@ export function supplyOutForm(D: Dashboard, pick?: Supply): FormSpec {
   const list = (D.supplies ?? []).filter((x) => x.active && x.stock > 0);
   const where: [string, string][] = [...D.houses.map((h): [string, string] => [h.name, h.name]), ...D.locations.map((l): [string, string] => [l.name, l.name]), ['Farm use', 'Farm use'], [NEW, 'Something else']];
   return {
+    again: true,
     title: 'Issue supplies',
     fields: [
       { type: 'select', id: 'item', label: 'Item', options: [['', 'Choose an item'], ...list.map((x): [string, string] => [String(x.id), `${x.name} (${n0(x.stock)} ${x.unit} in store)`])], def: pick ? String(pick.id) : '' },
@@ -479,6 +489,7 @@ const tns = (t: number) => `${(Math.round(t * 100) / 100).toLocaleString('en-KE'
 export function rawInForm(D: Dashboard, m?: RawMaterial): FormSpec {
   const kgOf = (v: V) => { const x = rawOf(D, v.mat); return (v.bags || 0) * (x?.bag_kg ?? 50) + (v.kg || 0); };
   return {
+    again: true,
     title: 'Raw material received',
     intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Count the bags as they come off the lorry. Payment is recorded by the farm manager.</p>,
     fields: [
@@ -570,6 +581,7 @@ export function recipeForm(D: Dashboard): FormSpec {
     ...(m ? [{ type: 'select', id: `a${k}`, label: 'In use', options: [['true', 'Yes'], ['false', 'No longer used']], def: String(m.active) } as Field] : []),
   ];
   return {
+    steps: false,
     title: 'Feed recipe',
     intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>The kg of each raw material in one tonne of feed. Every milling uses this recipe, and the materials in use must add up to 1,000 kg. Earlier millings keep the recipe they used.</p>,
     fields: [...mats.flatMap((m) => [{ type: 'note', text: <b>{m.name}</b> } as Field, ...block(m.id, m)]), ...EXTRA.flatMap((k) => block(k))],
@@ -613,6 +625,7 @@ export function dispatchForm(D: Dashboard, from: string, opts: { leftover?: bool
   const dests = D.locations.filter((l) => l.id !== from);
   const name = (id: unknown) => dests.find((l) => l.id === id)?.name ?? '';
   return {
+    again: true,
     title: opts.leftover ? 'Drop off what is left' : van ? 'Deliver eggs' : 'Issue eggs',
     intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>{opts.leftover ? 'The van ends the day empty. Leave what is on board at the farm or an outlet; they confirm the count.'
       : van ? 'Deliver eggs from the van to the farm or an outlet. They confirm the count when it arrives.'
@@ -700,6 +713,7 @@ export function breakageForm(D: Dashboard, loc: string): FormSpec {
   const st = stockNow(D, loc);
   const have = (i: Item) => st[i.toLowerCase() as keyof Q];
   return {
+    again: true,
     title: 'Damaged eggs',
     intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Eggs too broken to sell. Cracked eggs that can still be sold stay in stock as <b>Cracked</b>.</p>,
     fields: [
@@ -717,15 +731,17 @@ export function saleForm(D: Dashboard, loc: string): FormSpec {
   const list = (v: V) => priceOf(D, gradesOf(v));
   const due = (v: V) => (v.agreed > 0 ? v.agreed : list(v));
   return {
+    again: true,
     title: 'Record sale',
     fields: [
       ...dateFields(D),
       ...gradeFields('', { hint: { N: `On the shelf: ${eggs(st.n)} · ${n0(s.tray_n)} a tray, ${s.pc_n} a piece`, B: `On the shelf: ${eggs(st.b)} · ${n0(s.tray_b)} a tray, ${s.pc_b} a piece`,
                                    C: `On the shelf: ${eggs(st.c)} · ${n0(s.tray_c)} a tray, ${s.pc_c} a piece` } }),
       { type: 'num', id: 'agreed', label: 'Agreed price (only if different)', suffix: 'KES', hint: 'Leave blank to charge the list price.' },
-      { type: 'pair', fields: [{ type: 'num', id: 'cash', label: 'Cash', suffix: 'KES' }, { type: 'num', id: 'till', label: 'M-Pesa Till', suffix: 'KES' }] },
-      { type: 'pair', fields: [{ type: 'num', id: 'paybill', label: 'M-Pesa Paybill', suffix: 'KES' }, { type: 'num', id: 'credit', label: 'Credit (pays later)', suffix: 'KES' }] },
-      { type: 'text', id: 'customer', label: 'Customer (needed for credit)', placeholder: 'e.g. hotel or regular buyer' },
+      { type: 'step', title: 'How did the customer pay?', live: true, quick: true, fields: [
+        { type: 'pair', fields: [{ type: 'num', id: 'cash', label: 'Cash', suffix: 'KES' }, { type: 'num', id: 'till', label: 'M-Pesa Till', suffix: 'KES' }] },
+        { type: 'pair', fields: [{ type: 'num', id: 'paybill', label: 'M-Pesa Paybill', suffix: 'KES' }, { type: 'num', id: 'credit', label: 'Credit (pays later)', suffix: 'KES' }] }] },
+      { type: 'group', show: (v) => v.credit > 0, fields: [{ type: 'text', id: 'customer', label: 'Customer who will pay later', placeholder: 'e.g. hotel or regular buyer' }] },
     ],
     calc: (v) => { const d = due(v), paid = v.cash + v.till + v.paybill + (v.credit || 0), rem = d - paid, o = over(gradesOf(v), st); return <>
       {o && <Bad l={o} r="Check" />}
@@ -733,7 +749,7 @@ export function saleForm(D: Dashboard, loc: string): FormSpec {
       {v.agreed > 0 && v.agreed !== list(v) && <Row l="List price" r={`${kes(list(v))} (${v.agreed < list(v) ? 'discount' : 'premium'} ${kes(Math.abs(list(v) - v.agreed))})`} />}
       {d === 0 && paid === 0 ? <div><span className="muted">Enter the eggs sold, then how the customer paid</span></div>
         : d > 0 && rem === 0 ? <Ok>Payments add up to {kes(paid)}{v.credit > 0 ? `, ${kes(v.credit)} on credit` : ''}</Ok> : <Bad l={rem > 0 ? 'Still to allocate' : 'Over-allocated'} r={kes(Math.abs(rem))} />}
-      {v.credit > 0 && !String(v.customer ?? '').trim() && <Bad l="Credit needs the customer's name" r="Add it below" />}</>; },
+      {v.credit > 0 && !String(v.customer ?? '').trim() && <Bad l="Credit needs the customer's name" r="Add the name" />}</>; },
     buttons: (v, set) => <>{(['cash', 'till', 'paybill', 'credit'] as const).map((m) => (
       <button key={m} type="button" className="btn sm alt" onClick={() => set({ cash: '', till: '', paybill: '', credit: '', [m]: due(v) })}>All {m === 'cash' ? 'cash' : m === 'till' ? 'Till' : m === 'paybill' ? 'Paybill' : 'credit'}</button>))}</>,
     onSubmit: async (v) => {
@@ -756,6 +772,7 @@ export function creditPaidForm(D: Dashboard, loc: string | null, pick?: Credit):
   const opts: [string, string][] = open.map((c) => [key(c), `${c.customer}${loc ? '' : ` · ${locName(D, c.location_id)}`} · owes ${kes(c.owed)}`]);
   const chosen = (v: V) => open.find((c) => key(c) === v.who);
   return {
+    again: true,
     title: 'Credit paid',
     intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>A customer who bought on credit pays now. The money goes into the cash drawer, Till or Paybill, and what they owe goes down.</p>,
     fields: [
@@ -804,6 +821,7 @@ export function shopDayForm(D: Dashboard, loc: string, day?: string): FormSpec {
   const today = (v: V) => dayOf(D, v) === D.today;
   const traded = (v: V) => (v.trading ?? 'open') === 'open';
   return {
+    steps: false,
     title: `Daily stock sheet · ${locName(D, loc)}`,
     intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Like the shop book. Opening stock and deliveries received fill in by themselves; enter what is not in the app yet, then the closing count.</p>,
     fields: [
@@ -875,6 +893,7 @@ export function expenseForm(D: Dashboard, loc: string, mgmt: boolean): FormSpec 
   const from: [string, string][] = [[cashAcc(loc), `${accName(D, cashAcc(loc))} (${kes(balance(D, cashAcc(loc)))})`], ['TILL', 'M-Pesa Till'], ['PAYBILL', 'M-Pesa Paybill']];
   if (mgmt) from.push(['BANK', 'Bank']);
   return {
+    again: true,
     title: 'Expense',
     fields: [
       { type: 'num', id: 'amt', label: 'Amount', suffix: 'KES' },
@@ -1097,6 +1116,7 @@ export const scheduleForm = (D: Dashboard, e?: ScheduleItem): FormSpec => ({
 
 const ROLE_OPTS: [string, string][] = [['pos', 'Sales point attendant / van driver'], ['clerk', 'Production clerk'], ['store', 'Inventory clerk'], ['manager', 'Farm manager'], ['owner', 'Owner']];
 export const staffForm = (D: Dashboard, s?: StaffLite): FormSpec => ({
+  steps: false,
   title: s ? `Edit ${s.display_name}` : 'Add staff member',
   intro: !s ? <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>They sign in with this username and the temporary password <b>0000</b>. It works once, for 72 hours, and they must choose their own password straight away. Owners and farm managers also set up two-step sign-in.</p> : undefined,
   fields: [
@@ -1123,6 +1143,7 @@ export function openingForm(D: Dashboard): FormSpec {
   fields.push({ type: 'pair', fields: [{ type: 'num', id: 'feed', label: 'Feed in store', suffix: 'bags', step: 0.5, def: Math.round(D.feed_stock / D.settings.bag_kg * 10) / 10 }, { type: 'num', id: 'tank', label: 'Water in tank', suffix: 'L', def: D.tank?.litres ?? '' }] });
   for (const m of D.medicines.filter((x) => x.active)) fields.push({ type: 'num', id: `med_${m.id}`, label: `${m.name}`, suffix: m.unit, def: m.stock });
   return {
+    steps: false,
     title: 'Opening balances', fields, submit: 'Save opening balances',
     onSubmit: async (v) => {
       const stock: Record<string, Q> = {}, money: Record<string, number> = {}, medicines: Record<string, number> = {};

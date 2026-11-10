@@ -5,14 +5,13 @@
 import { useEffect, useState } from 'react';
 import { rpc } from '../lib/api';
 import { dlabel } from '../lib/format';
+import { monthLabel as label } from '../lib/search';
 import type { MonthBook } from '../lib/monthBook';
 import type { Dashboard } from '../lib/types';
 import { Icon } from '../ui/icons';
 import { useUI } from '../ui/ui';
 import { Card, SkelList } from '../ui/widgets';
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const label = (m: string) => `${MONTHS[+m.slice(5, 7) - 1]} ${m.slice(0, 4)}`;
 /** Months from the first record to this one, newest first. */
 export function monthsFrom(first: string, today: string): string[] {
   const out: string[] = [];
@@ -20,6 +19,19 @@ export function monthsFrom(first: string, today: string): string[] {
   const ty = +today.slice(0, 4), tm = +today.slice(5, 7);
   while (y < ty || (y === ty && m <= tm)) { out.push(`${y}-${String(m).padStart(2, '0')}-01`); m++; if (m > 12) { m = 1; y++; } }
   return out.reverse().slice(0, 24);
+}
+
+/** Builds the month's workbook on the phone and saves it. Returns the month's name. */
+export async function downloadMonth(D: Dashboard, m: string): Promise<string> {
+  const [book, mod] = await Promise.all([rpc<MonthBook>('rpc_month_book', { p_month: m }), import('../lib/monthBook')]);
+  // the van has no counts; its tab says what was left on board instead
+  book.locations = book.locations.map((l) => ({ ...l, kind: D.locations.find((x) => x.id === l.id)?.kind }));
+  const { bytes, filename } = mod.buildMonthBook(book);
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  return label(m);
 }
 
 export function MonthBooks({ D }: { D: Dashboard }) {
@@ -31,17 +43,7 @@ export function MonthBooks({ D }: { D: Dashboard }) {
   }, [D.today]);
   const get = async (m: string) => {
     setBusy(m);
-    try {
-      const [book, mod] = await Promise.all([rpc<MonthBook>('rpc_month_book', { p_month: m }), import('../lib/monthBook')]);
-      // the van has no counts; its tab says what was left on board instead
-      book.locations = book.locations.map((l) => ({ ...l, kind: D.locations.find((x) => x.id === l.id)?.kind }));
-      const { bytes, filename } = mod.buildMonthBook(book);
-      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-      const a = document.createElement('a');
-      a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-      ui.toast(`${label(m)} downloaded.`);
-    } catch (e) { ui.toast((e as Error).message); } finally { setBusy(null); }
+    try { ui.toast(`${await downloadMonth(D, m)} downloaded.`); } catch (e) { ui.toast((e as Error).message); } finally { setBusy(null); }
   };
   const thisMonth = D.today.slice(0, 8) + '01';
   const yest = new Date(`${D.today}T00:00:00Z`); yest.setUTCDate(yest.getUTCDate() - 1);

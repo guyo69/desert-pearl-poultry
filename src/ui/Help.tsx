@@ -4,8 +4,9 @@
 // and help. Content lives in lib/help.ts.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { rpc } from '../lib/api';
-import { FAQS, TASKS, TIPS, score, whoOf, words, type Tip, type Who } from '../lib/help';
-import { canEnter, isVan } from '../lib/metrics';
+import { FAQS, TASKS, TIPS, type Tip, type Who } from '../lib/help';
+import { ACTION_META, actionsFor, IDEAS, search, whoFor, type Go, type Hit } from '../lib/search';
+import { downloadMonth } from '../views/MonthBooks';
 import type { Dashboard } from '../lib/types';
 import {
   breakageForm, collectForm, confirmIssueForm, countForm, creditPaidForm, dispatchForm, expenseForm, flockForm, houseDayForm, houseNewForm, millForm,
@@ -19,53 +20,50 @@ export interface TabInfo { key: string; label: string; icon: string }
 type UI = ReturnType<typeof useUI>;
 interface Ctx { D: Dashboard; ui: UI; go: (t: string) => void; tabs: TabInfo[] }
 
-export const whoFor = (D: Dashboard): Who => whoOf(D.me.role, D.me.role === 'pos' && !!D.me.location_id && isVan(D, D.me.location_id));
+export { whoFor };
 
 // ---------------------------------------------------------------------------- actions
-/** Everything Search and the how-to steps can open, with who can use it. */
-interface Action { id: string; label: string; keywords: string; who: Who[]; enter?: boolean; run: (c: Ctx) => void }
+/** How each form in lib/search.ts ACTION_META opens. */
 const LOC = (c: Ctx) => c.D.me.location_id ?? 'FARM';
-const SHOP: Who[] = ['pos'], ROAD: Who[] = ['pos', 'van'];
-const ACTIONS: Action[] = [
-  { id: 'sale', label: 'Record a sale', keywords: 'sell sold customer cash till paybill mpesa credit', who: ROAD, enter: true, run: (c) => c.ui.openForm(saleForm(c.D, LOC(c))) },
-  { id: 'count_open', label: 'Opening count', keywords: 'start morning count stock', who: SHOP, enter: true, run: (c) => c.ui.openForm(countForm(c.D, LOC(c), 'open')) },
-  { id: 'count_close', label: 'Close the day: closing count', keywords: 'closing evening end count', who: SHOP, enter: true, run: (c) => c.ui.openForm(countForm(c.D, LOC(c), 'close')) },
-  { id: 'cash_count', label: 'Count the cash', keywords: 'cash drawer money count', who: SHOP, enter: true, run: (c) => c.ui.openForm(cashCountForm(c.D, LOC(c))) },
-  { id: 'receive', label: 'Receive a delivery', keywords: 'receive load arrive stock in transfer', who: ['pos', 'van', 'clerk', 'manager'], enter: true, run: (c) => {
+const RUNS: Record<string, (c: Ctx) => void> = {
+  sale: (c) => c.ui.openForm(saleForm(c.D, LOC(c))),
+  count_open: (c) => c.ui.openForm(countForm(c.D, LOC(c), 'open')),
+  count_close: (c) => c.ui.openForm(countForm(c.D, LOC(c), 'close')),
+  cash_count: (c) => c.ui.openForm(cashCountForm(c.D, LOC(c))),
+  receive: (c) => {
     const loc = LOC(c), x = c.D.transit.find((t) => t.to_loc === loc);
     if (x) c.ui.openForm(receiveForm(c.D, x)); else c.ui.toast('Nothing is on the way to you right now.');
-  } },
-  { id: 'dispatch', label: 'Send eggs to another location', keywords: 'issue eggs deliver transfer send outlet van', who: ['pos', 'van', 'clerk', 'manager'], enter: true, run: (c) => c.ui.openForm(dispatchForm(c.D, LOC(c))) },
-  { id: 'leftover', label: 'Drop off what is left on the van', keywords: 'left over empty end of day van', who: ['van'], enter: true, run: (c) => c.ui.openForm(dispatchForm(c.D, LOC(c), { leftover: true })) },
-  { id: 'damaged', label: 'Damaged eggs', keywords: 'broken spoilt breakage loss', who: ROAD, enter: true, run: (c) => c.ui.openForm(breakageForm(c.D, LOC(c))) },
-  { id: 'shop_day', label: 'Daily stock sheet', keywords: 'stock sheet book closed day', who: SHOP, enter: true, run: (c) => c.ui.openForm(shopDayForm(c.D, LOC(c))) },
-  { id: 'credit_paid', label: 'Credit paid back', keywords: 'credit debt owe customer paid', who: ['pos', 'van', 'manager'], enter: true, run: (c) => c.ui.openForm(creditPaidForm(c.D, c.D.me.role === 'pos' ? LOC(c) : null)) },
-  { id: 'expense', label: 'Record an expense', keywords: 'expense spend paid cost', who: ['pos', 'van', 'manager'], enter: true, run: (c) => c.ui.openForm(expenseForm(c.D, LOC(c), c.D.me.role === 'manager')) },
-  { id: 'move', label: 'Bank or move money', keywords: 'bank deposit mpesa paybill move money cash', who: ['pos', 'van', 'manager'], enter: true, run: (c) => c.ui.openForm(moveForm(c.D, c.D.me.role === 'pos' ? LOC(c) : null)) },
-  { id: 'tank', label: 'Tank level', keywords: 'water tank level reading refill', who: ['clerk', 'manager'], enter: true, run: (c) => c.ui.openForm(tankForm(c.D)) },
-  { id: 'water', label: 'Water drunk', keywords: 'water litres drink house', who: ['clerk', 'manager'], enter: true, run: (c) => c.ui.openForm(waterIntakeForm(c.D)) },
-  { id: 'collect', label: 'Egg collection', keywords: 'eggs collect grade cracked jumbo damaged house', who: ['clerk', 'manager'], enter: true, run: (c) => c.ui.openForm(collectForm(c.D)) },
-  { id: 'house_day', label: 'Daily house sheet', keywords: 'house sheet whole day farm book', who: ['clerk', 'manager'], enter: true, run: (c) => c.ui.openForm(houseDayForm(c.D)) },
-  { id: 'mortality', label: 'Record deaths', keywords: 'mortality dead died birds', who: ['clerk', 'manager'], enter: true, run: (c) => c.ui.openForm(mortForm(c.D)) },
-  { id: 'confirm', label: 'Confirm what the store issued', keywords: 'confirm feed medicine arrived store', who: ['clerk', 'manager'], enter: true, run: (c) => {
+  },
+  dispatch: (c) => c.ui.openForm(dispatchForm(c.D, LOC(c))),
+  leftover: (c) => c.ui.openForm(dispatchForm(c.D, LOC(c), { leftover: true })),
+  damaged: (c) => c.ui.openForm(breakageForm(c.D, LOC(c))),
+  shop_day: (c) => c.ui.openForm(shopDayForm(c.D, LOC(c))),
+  credit_paid: (c) => c.ui.openForm(creditPaidForm(c.D, c.D.me.role === 'pos' ? LOC(c) : null)),
+  expense: (c) => c.ui.openForm(expenseForm(c.D, LOC(c), c.D.me.role === 'manager')),
+  move: (c) => c.ui.openForm(moveForm(c.D, c.D.me.role === 'pos' ? LOC(c) : null)),
+  tank: (c) => c.ui.openForm(tankForm(c.D)),
+  water: (c) => c.ui.openForm(waterIntakeForm(c.D)),
+  collect: (c) => c.ui.openForm(collectForm(c.D)),
+  house_day: (c) => c.ui.openForm(houseDayForm(c.D)),
+  mortality: (c) => c.ui.openForm(mortForm(c.D)),
+  confirm: (c) => {
     const x = (c.D.store_pending ?? [])[0];
     if (x) c.ui.openForm(confirmIssueForm(c.D, x)); else c.ui.toast('Nothing from the store is waiting to be confirmed.');
-  } },
-  { id: 'feed_in', label: 'Feed received', keywords: 'feed delivery bags supplier', who: ['store', 'manager'], enter: true, run: (c) => c.ui.openForm(storeFeedInForm(c.D)) },
-  { id: 'feed_issue', label: 'Issue feed to a house', keywords: 'feed issue house bags feeding', who: ['store', 'manager'], enter: true, run: (c) => c.ui.openForm(storeFeedIssueForm(c.D)) },
-  { id: 'med_in', label: 'Medicine received', keywords: 'medicine vaccine delivery', who: ['store', 'manager'], enter: true, run: (c) => c.ui.openForm(storeMedInForm(c.D)) },
-  { id: 'med_issue', label: 'Issue medicine to a house', keywords: 'medicine vaccine issue house', who: ['store', 'manager'], enter: true, run: (c) => c.ui.openForm(storeMedIssueForm(c.D)) },
-  { id: 'supply_in', label: 'Supplies received', keywords: 'trays packaging cleaning supplies delivery', who: ['store', 'manager'], enter: true, run: (c) => c.ui.openForm(supplyInForm(c.D)) },
-  { id: 'supply_out', label: 'Issue supplies', keywords: 'trays packaging supplies issue', who: ['store', 'manager'], enter: true, run: (c) => c.ui.openForm(supplyOutForm(c.D)) },
-  { id: 'mill', label: 'Feed milled', keywords: 'mill mix tonnes feed recipe', who: ['store', 'manager'], enter: true, run: (c) => c.ui.openForm(millForm(c.D)) },
-  { id: 'raw_in', label: 'Raw material received', keywords: 'maize soybean bran sunflower limestone grit macropack delivery', who: ['store', 'manager'], enter: true, run: (c) => c.ui.openForm(rawInForm(c.D)) },
-  { id: 'raw_count', label: 'Count the raw material store', keywords: 'count stock take raw store', who: ['store', 'manager'], enter: true, run: (c) => c.ui.openForm(rawCountForm(c.D)) },
-  { id: 'recipe', label: 'Change the feed recipe', keywords: 'recipe formula mill kg tonne', who: ['owner', 'manager'], run: (c) => c.ui.openForm(recipeForm(c.D)) },
-  { id: 'flock', label: 'Place a new flock', keywords: 'flock hens breed placement new birds', who: ['owner', 'manager', 'clerk'], run: (c) => c.ui.openForm(flockForm(c.D)) },
-  { id: 'house_new', label: 'Add a house', keywords: 'house expansion new building', who: ['owner', 'manager', 'clerk'], run: (c) => c.ui.openForm(houseNewForm(c.D)) },
-  { id: 'staff', label: 'Add a member of staff', keywords: 'staff user account employee new', who: ['owner', 'manager'], run: (c) => c.ui.openForm(staffForm(c.D)) },
-];
-const actionsFor = (D: Dashboard, who: Who) => ACTIONS.filter((a) => a.who.includes(who) && (!a.enter || canEnter(D)));
+  },
+  feed_in: (c) => c.ui.openForm(storeFeedInForm(c.D)),
+  feed_issue: (c) => c.ui.openForm(storeFeedIssueForm(c.D)),
+  med_in: (c) => c.ui.openForm(storeMedInForm(c.D)),
+  med_issue: (c) => c.ui.openForm(storeMedIssueForm(c.D)),
+  supply_in: (c) => c.ui.openForm(supplyInForm(c.D)),
+  supply_out: (c) => c.ui.openForm(supplyOutForm(c.D)),
+  mill: (c) => c.ui.openForm(millForm(c.D)),
+  raw_in: (c) => c.ui.openForm(rawInForm(c.D)),
+  raw_count: (c) => c.ui.openForm(rawCountForm(c.D)),
+  recipe: (c) => c.ui.openForm(recipeForm(c.D)),
+  flock: (c) => c.ui.openForm(flockForm(c.D)),
+  house_new: (c) => c.ui.openForm(houseNewForm(c.D)),
+  staff: (c) => c.ui.openForm(staffForm(c.D)),
+};
 
 function runAction(c: Ctx, id: string) {
   if (id.startsWith('go:')) {
@@ -73,8 +71,7 @@ function runAction(c: Ctx, id: string) {
     if (c.tabs.some((x) => x.key === t)) { c.ui.close(); c.go(t); } else c.ui.toast('That screen is not part of your role.');
     return;
   }
-  const a = actionsFor(c.D, whoFor(c.D)).find((x) => x.id === id);
-  if (a) a.run(c);
+  if (actionsFor(c.D, whoFor(c.D)).some((x) => x.id === id)) RUNS[id]?.(c);
 }
 
 // ---------------------------------------------------------------------------- tips
@@ -172,7 +169,8 @@ async function replayTips(D: Dashboard, tab: string) {
 // ---------------------------------------------------------------------------- help panel
 const ROLE_LABEL: Record<Who, string> = { owner: 'Owner', manager: 'Farm manager', clerk: 'Production clerk', store: 'Inventory clerk', pos: 'Outlet attendant', van: 'Van driver' };
 
-export const ACTION_IDS = ACTIONS.map((a) => a.id);
+/** Forms that have a way to open (tests check every how-to points at one). */
+export const ACTION_IDS = ACTION_META.map((a) => a.id).filter((id) => id in RUNS);
 
 export function HelpPanel({ D, ui, go, tabs, tab }: Ctx & { tab: string }) {
   const who = whoFor(D), [sec, setSec] = useState<'how' | 'faq'>('how'), [open, setOpen] = useState<number | null>(0);
@@ -198,44 +196,76 @@ export function HelpPanel({ D, ui, go, tabs, tab }: Ctx & { tab: string }) {
 }
 
 // ---------------------------------------------------------------------------- search
-interface Hit { kind: 'Screen' | 'Action' | 'Help'; title: string; sub: string; icon: string; s: number; run: () => void }
+const RECENT = 'dpv-search-recent';
+const recent = (): string[] => { try { return JSON.parse(localStorage.getItem(RECENT) ?? '[]').slice(0, 5); } catch { return []; } };
+const remember = (q: string) => { try { localStorage.setItem(RECENT, JSON.stringify([q, ...recent().filter((x) => x.toLowerCase() !== q.toLowerCase())].slice(0, 5))); } catch { /* storage blocked */ } };
+
+/** Scrolls to a card on the screen by its title (or a data-tip name) and highlights it, once it has drawn. */
+export function reveal(section: string, seg?: string) {
+  let n = 0, switched = !seg;
+  const find = () => (document.querySelector(`[data-tip="${CSS.escape(section)}"]`) as HTMLElement | null)
+    ?? ([...document.querySelectorAll('main .card')].find((el) => el.querySelector(':scope > .card-h h3')?.textContent?.trim().toLowerCase() === section.toLowerCase()) as HTMLElement | undefined) ?? null;
+  const tick = () => {
+    if (!switched) {
+      const b = [...document.querySelectorAll<HTMLButtonElement>('main .seg button')].find((x) => x.textContent?.trim() === seg);
+      if (b) { switched = true; if (b.getAttribute('aria-pressed') !== 'true') { b.click(); setTimeout(tick, 80); return; } }
+      else if (n > 6) switched = true;
+    }
+    const el = find();
+    if (!el) { if (++n < 40) setTimeout(tick, 80); return; }
+    el.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+    setTimeout(() => el.classList.remove('flash'), 2200);
+  };
+  setTimeout(tick, 60);
+}
+
+function carry(c: Ctx, g: Go) {
+  const { ui, go, tabs, D } = c;
+  if (g.kind === 'action') { runAction(c, g.id); return; }
+  if (g.kind === 'go') {
+    if (!tabs.some((t) => t.key === g.tab)) { ui.toast('That screen is not part of your role.'); return; }
+    ui.close(); go(g.tab); if (g.section) reveal(g.section, g.seg); return;
+  }
+  if (g.kind === 'help') { ui.openPanel(g.title, <div className="help"><ol className="help-steps">{g.lines.map((s) => <li key={s}>{s}</li>)}</ol></div>); return; }
+  ui.close(); ui.toast('Preparing the workbook…');
+  downloadMonth(D, g.month).then((m) => ui.toast(`${m} downloaded.`)).catch((e) => ui.toast((e as Error).message));
+}
+
+const GROUP_LABEL: Record<Hit['group'], string> = { Answer: 'Answer', 'Do it': 'Form', Download: 'Download', Screen: 'Screen', Section: 'Section', Data: 'Record', Help: 'Help' };
+const GROUP_COLOR: Record<Hit['group'], string> = { Answer: '--l-tuala', 'Do it': '--accent', Download: '--l-farm', Screen: '--info', Section: '--info', Data: '--l-van', Help: '--muted' };
+const GROUP_VERB: Record<Hit['group'], string> = { Answer: 'Show', 'Do it': 'Open', Download: 'Download', Screen: 'Go', Section: 'Go', Data: 'Show', Help: 'Read' };
 
 function SearchBox(c: Ctx) {
-  const { D, ui, go, tabs } = c, who = whoFor(D);
-  const [q, setQ] = useState(''), [sel, setSel] = useState(0);
-  const ref = useRef<HTMLInputElement>(null);
+  const { D, tabs } = c, who = whoFor(D);
+  const [q, setQ] = useState(''), [sel, setSel] = useState(0), [past] = useState(recent);
+  const ref = useRef<HTMLInputElement>(null), list = useRef<HTMLDivElement>(null);
   useEffect(() => { ref.current?.focus(); }, []);
-  const hits = useMemo<Hit[]>(() => {
-    const w = words(q);
-    if (!w.length) return [];
-    const out: Hit[] = [];
-    for (const t of tabs) out.push({ kind: 'Screen', title: t.label, sub: 'Go to this screen', icon: t.icon, s: score(w, t.label, t.key), run: () => { ui.close(); go(t.key); } });
-    for (const a of actionsFor(D, who)) out.push({ kind: 'Action', title: a.label, sub: 'Opens the form', icon: 'plus', s: score(w, a.label, a.keywords) + 0.5, run: () => a.run(c) });
-    for (const t of TASKS[who]) out.push({ kind: 'Help', title: t.title, sub: t.steps.join(' '), icon: 'list', s: score(w, t.title, `${t.steps.join(' ')} ${t.keywords ?? ''}`),
-      run: () => ui.openPanel(t.title, <div className="help"><ol className="help-steps">{t.steps.map((s) => <li key={s}>{s}</li>)}</ol></div>) });
-    for (const f of FAQS[who]) out.push({ kind: 'Help', title: f.q, sub: f.a, icon: 'alert', s: score(w, f.q, f.a),
-      run: () => ui.openPanel(f.q, <div className="help"><p style={{ margin: 0 }}>{f.a}</p></div>) });
-    return out.filter((h) => h.s > 0).sort((a, b) => b.s - a.s).slice(0, 12);
-  }, [q, D, who, tabs, ui, go, c]);
+  const hits = useMemo(() => search(D, tabs, q), [D, tabs, q]);
   useEffect(() => { setSel(0); }, [q]);
+  useEffect(() => { list.current?.querySelector('.sel')?.scrollIntoView({ block: 'nearest' }); }, [sel]);
+  const pick = (h: Hit) => { if (q.trim()) remember(q.trim()); carry(c, h.go); };
   const key = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setSel((s) => Math.min(s + 1, hits.length - 1)); }
     if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); }
-    if (e.key === 'Enter' && hits[sel]) { e.preventDefault(); hits[sel].run(); }
+    if (e.key === 'Enter' && hits[sel]) { e.preventDefault(); pick(hits[sel]); }
   };
-  const groups = (['Action', 'Screen', 'Help'] as const).map((k) => [k, hits.filter((h) => h.kind === k)] as const).filter(([, h]) => h.length);
-  const ideas = who === 'owner' ? ['report', 'staff', 'workbook', 'recipe'] : who === 'manager' ? ['missed day', 'expense', 'recipe', 'flock']
-    : who === 'clerk' ? ['eggs', 'water', 'deaths', 'flock'] : who === 'store' ? ['feed', 'mill', 'medicine', 'count'] : ['sale', 'credit', 'close', 'damaged'];
-  let i = -1;
+  const ideas = IDEAS[who];
   return <div className="search">
-    <div className="inp search-in"><Icon name="search" /><input ref={ref} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={key} placeholder="Search screens, forms and help"
-      aria-label="Search" autoComplete="off" enterKeyHint="go" /></div>
-    {!q.trim() ? <div className="search-ideas"><small className="muted">Try</small>{ideas.map((x) => <button key={x} className="lnk" onClick={() => setQ(x)}>{x}</button>)}</div>
-      : !hits.length ? <p className="muted small">Nothing found for "{q}". Try another word, or open Help.</p>
-      : groups.map(([k, hs]) => <div key={k} className="search-g"><h4>{k === 'Action' ? 'Do it' : k === 'Screen' ? 'Screens' : 'Help'}</h4>
-        <div className="list">{hs.map((h) => { i++; const me = i; return <button key={`${h.kind}${h.title}`} className={`li search-hit${me === sel ? ' sel' : ''}`} onClick={h.run} onMouseEnter={() => setSel(me)}>
-          <span className="av" style={{ background: `var(${k === 'Action' ? '--accent' : k === 'Screen' ? '--info' : '--muted'})` }}><Icon name={h.icon} /></span>
-          <span className="mid"><b>{h.title}</b><small>{h.sub}</small></span></button>; })}</div></div>)}
+    <div className="inp search-in"><Icon name="search" /><input ref={ref} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={key} placeholder="Search forms, screens, figures and help"
+      aria-label="Search" autoComplete="off" autoCapitalize="off" spellCheck={false} enterKeyHint="go" role="combobox" aria-expanded={hits.length > 0} aria-controls="search-results" />
+      {q && <button type="button" className="eye" aria-label="Clear" onClick={() => { setQ(''); ref.current?.focus(); }}><Icon name="x" /></button>}</div>
+    {!q.trim() ? <>
+      {past.length > 0 && <div className="search-ideas"><small className="muted">Recent</small>{past.map((x) => <button key={x} className="lnk" onClick={() => setQ(x)}><Icon name="clock" />{x}</button>)}</div>}
+      <div className="search-ideas"><small className="muted">Try</small>{ideas.map((x) => <button key={x} className="lnk" onClick={() => setQ(x)}>{x}</button>)}</div>
+      <p className="muted small" style={{ margin: 0 }}>Type a word in English or Kiswahili, a name, or a day such as yesterday or 3 Nov.</p>
+    </> : !hits.length ? <div className="empty"><Icon name="search" />Nothing matches "{q}". Try a shorter word, or open Help for the steps of each job.
+        <button className="lnk" onClick={() => openHelp(c, '')}>Open Help</button></div>
+      : <div className="list search-res" id="search-results" role="listbox" ref={list}>{hits.map((h, i) => <button key={h.key} role="option" aria-selected={i === sel}
+          className={`li search-hit${i === sel ? ' sel' : ''}${i === 0 ? ' top' : ''}`} onClick={() => pick(h)} onMouseEnter={() => setSel(i)}>
+          <span className="av" style={{ background: `var(${GROUP_COLOR[h.group]})` }}><Icon name={h.icon} /></span>
+          <span className="mid"><b>{h.title}</b><small>{h.sub}</small><em className="crumb"><i>{GROUP_LABEL[h.group]}</i>{h.crumb && <span>{h.crumb}</span>}</em></span>
+          <span className="go">{GROUP_VERB[h.group]}<Icon name="back" /></span></button>)}</div>}
     <p className="muted small search-keys">Enter opens the top result. On a computer, Ctrl+K opens Search from anywhere.</p>
   </div>;
 }

@@ -146,7 +146,7 @@ function Signed({ signOut }: { signOut: (everywhere?: boolean) => void }) {
   const out = (everywhere = false) => { setD(null); signOut(everywhere); };
   if (!D && !err) return <AppSkeleton />;
   if (!D) return <div className="center">{err ? <div className="card" style={{ maxWidth: 440 }}><h3>Cannot load the farm data</h3><p className="muted">{err}</p><div className="row-btns"><button className="btn" onClick={reload}>Try again</button><button className="btn alt" onClick={() => out()}>Sign out</button></div></div> : null}</div>;
-  return <UIProvider afterSave={reload}><Shell D={D} version={version} err={err} signOut={out} reload={reload} /></UIProvider>;
+  return <UIProvider afterSave={reload} field={D.me.role !== 'owner' && D.me.role !== 'manager'}><Shell D={D} version={version} err={err} signOut={out} reload={reload} /></UIProvider>;
 }
 
 function Shell({ D, version, err, signOut, reload }: { D: Dashboard; version: number; err: string; signOut: (everywhere?: boolean) => void; reload: () => void }) {

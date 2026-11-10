@@ -21,6 +21,7 @@ const P: Record<string, JSX.Element> = {
   box: <><path d="M3 7.5L12 3l9 4.5-9 4.5z" /><path d="M3 7.5v9L12 21l9-4.5v-9M12 12v9" /></>,
   list: <path d="M9 6h12M9 12h12M9 18h12M4 6h.01M4 12h.01M4 18h.01" />,
   plus: <path d="M12 5v14M5 12h14" />,
+  minus: <path d="M5 12h14" />,
   check: <path d="M4.5 12.5l5 5L20 7" />,
   alert: <><path d="M12 3.5L22 20.5H2z" /><path d="M12 10v4.5M12 17.5h.01" /></>,
   inbox: <><path d="M12 3v11M7.5 9.5L12 14l4.5-4.5" /><path d="M3.5 14v6h17v-6" /></>,

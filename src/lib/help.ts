@@ -124,6 +124,7 @@ const COMMON: Faq[] = [
   { q: 'I forgot my password.', a: 'The owner and farm manager can use Forgot password on the sign-in screen. Everyone else: ask the owner or farm manager to reset it.' },
   { q: 'The app says Offline.', a: 'Nothing typed while offline is saved. Check data or Wi-Fi, reopen the app and enter it again.' },
   { q: 'I entered something wrong.', a: 'Records cannot be changed or deleted. Tell the farm manager the same day so it can be accounted for.' },
+  { q: 'I want every question on one page.', a: 'Under My account, Forms, choose All on one page. One at a time switches it back.' },
   { q: 'A button I expect is missing.', a: 'Your role does not include it. Each person only sees what their job needs.' },
 ];
 export const FAQS: Record<Who, Faq[]> = {
