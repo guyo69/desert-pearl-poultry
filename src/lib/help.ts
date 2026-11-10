@@ -131,6 +131,7 @@ export const FAQS: Record<Who, Faq[]> = {
     { q: 'A customer will pay later.', a: 'Put the amount under Credit (pays later) with the customer\'s name. When they pay, use Credit paid.' },
     { q: 'The sale will not save.', a: 'Cash, Till, Paybill and credit must add up to the amount due.' },
     { q: 'A delivery is not showing.', a: 'The sender has not recorded it yet. Ask them to, then refresh.' },
+    { q: 'Why does the count not show what I should have?', a: 'So the count is honest. Enter what you see. The app shows any difference after you save.' },
     { q: 'My closing count does not match.', a: 'Count again. If it is still different, save the real count. The difference is recorded.' },
     { q: 'We are not opening today.', a: 'On the Daily stock sheet choose Closed all day. Sundays are already a closing day.' },
     ...COMMON,

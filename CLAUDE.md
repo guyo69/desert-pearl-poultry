@@ -112,6 +112,11 @@ Before you push, run `npm test` and `npm run build`. If you touch SQL, also run 
 - **Search** (top bar, or Ctrl+K): screens, actions that open the form directly, and help answers, filtered by role and by `canEnter`.
 - **One source:** `src/lib/help.ts` holds the tips, tasks and questions for each role (`pos`, `van`, `clerk`, `store`, `manager`, `owner`); `tests/help.test.ts` keeps tips short and every how-to linked to a real action. When a feature is added, add its tip there with a new id: only that tip shows to people who saw the rest.
 
+## Blind counts and the interface refresh (from the client, 10 Nov 2026)
+
+- **Blind counts:** the opening count, Close the day and Count cash show no book stock, no expected cash and nothing pre-filled. The person enters what they see; the server works out the difference and the app shows it only after saving ("The farm manager can see it"). On the Daily stock sheet the outlet attendant (`pos`) sees no book closing and no expected cash. The attendant's Today screen shows Cash counted (or Not yet), never the expected cash, and Money shows the expected total only after a count. Owner and farm manager screens are unchanged.
+- **Interface:** Geist type (self-hosted latin subset, no third-party fonts, works offline), tinted neutrals with an off-black dark mode, at least 44px touch targets and 48px for field roles (`html[data-field]`, set for every role except owner and manager), a tinted pill on the current tab, sentence-case table and section labels, composed empty states and a short staggered page entry (off with reduced motion).
+
 ## Open items
 
 - **Tank size:** `settings.tank_capacity_l` is 1,000 L while the farm sheet showed about 3,500 L drunk per house a day. Confirm the real tank size, then record a fresh tank reading.

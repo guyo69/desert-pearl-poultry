@@ -156,6 +156,12 @@ function Shell({ D, version, err, signOut, reload }: { D: Dashboard; version: nu
   const [drawer, setDrawer] = useState(false);
   const go = (t: string) => { setTab(t); setDrawer(false); try { history.replaceState(null, '', `#${t}`); } catch { /* ignore */ } window.scrollTo(0, 0); };
   useEffect(() => { if (!tabs.includes(tab)) setTab(tabs[0]); }, [tabs, tab]);
+  // field roles get larger touch targets (styles.css, html[data-field])
+  useEffect(() => {
+    const el = document.documentElement, field = D.me.role !== 'owner' && D.me.role !== 'manager';
+    el.toggleAttribute('data-field', field);
+    return () => el.removeAttribute('data-field');
+  }, [D.me.role]);
 
   // the owner is asked for a recovery email after signing in, until one is confirmed
   useEffect(() => {

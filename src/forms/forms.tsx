@@ -788,7 +788,7 @@ export function creditPaidForm(D: Dashboard, loc: string | null, pick?: Credit):
  * received fill in from the records; the closing count shows any gap.
  */
 export function shopDayForm(D: Dashboard, loc: string, day?: string): FormSpec {
-  const exp = balance(D, cashAcc(loc));
+  const exp = balance(D, cashAcc(loc)), blind = D.me.role === 'pos';
   const book = (v: V) => dayLedger(D, loc, dayOf(D, v));
   const all = (v: V) => v.grades === 'all';
   const sold = (v: V) => ({ n: v.s_n || 0, b: all(v) ? v.s_b || 0 : 0, c: all(v) ? v.s_c || 0 : 0, j: all(v) ? v.s_j || 0 : 0 });
@@ -822,7 +822,7 @@ export function shopDayForm(D: Dashboard, loc: string, day?: string): FormSpec {
       { type: 'group', show: (v) => v.counted === 'yes', fields: [
         { type: 'eggs', id: 'c_n', label: 'Normal eggs counted' },
         { type: 'group', show: all, fields: gradeFields('c_', { only: ['B', 'C', 'J'] }) }] },
-      { type: 'group', show: today, fields: [{ type: 'num', id: 'cash', label: 'Cash in the drawer (optional)', suffix: 'KES', hint: `Expected ${kes(exp)} before the cash sales above` }] },
+      { type: 'group', show: today, fields: [{ type: 'num', id: 'cash', label: 'Cash in the drawer (optional)', suffix: 'KES', hint: blind ? 'Count the notes and coins, then enter the total.' : `Expected ${kes(exp)} before the cash sales above` }] },
       ] },
     ],
     submit: 'Save the day',
@@ -837,8 +837,9 @@ export function shopDayForm(D: Dashboard, loc: string, day?: string): FormSpec {
         {tot(L.iss) + tot(iss(v)) > 0 && <Row l="Issued" r={eggs(tot(L.iss) + tot(iss(v)))} />}
         {tot(L.brk) + tot(dmg(v)) > 0 && <Row l="Damaged" r={eggs(tot(L.brk) + tot(dmg(v)))} />}
         <Row l={`Sold${sales.cnt ? ` (incl. ${sales.cnt} sale${sales.cnt === 1 ? '' : 's'} already entered)` : ''}`} r={`${eggs(tot(L.sold) + tot(sold(v)))} · ${kes(sales.value + (tot(sold(v)) ? val : 0))}`} />
-        <Row l="Closing by the book" r={eggs(tot(e))} />
-        {counted && (gap ? <Bad l={gap < 0 ? 'Count is short' : 'Count is over'} r={eggs(Math.abs(gap))} /> : <Ok>Count matches the book</Ok>)}
+        {!blind && <Row l="Closing by the book" r={eggs(tot(e))} />}
+        {blind && counted && <Row l="You counted" r={eggs(tot(cnt))} />}
+        {!blind && counted && (gap ? <Bad l={gap < 0 ? 'Count is short' : 'Count is over'} r={eggs(Math.abs(gap))} /> : <Ok>Count matches the book</Ok>)}
         {tot(sold(v)) > 0 && money !== val && <Bad l="Cash + M-Pesa do not match the sales" r={`${kes(money)} of ${kes(val)}`} />}
         {e.n < 0 && <Bad l="More eggs out than the book holds" r="Enter missing deliveries first" />}
       </>;
@@ -913,41 +914,51 @@ export function moveForm(D: Dashboard, loc: string | null): FormSpec {
 }
 
 /* ---------------- counts ---------------- */
-export function countForm(D: Dashboard, loc: string, kind: 'open' | 'close'): FormSpec {
-  const st = stockNow(D, loc), acc = cashAcc(loc), exp = balance(D, acc);
-  const fields: Field[] = [...gradeFields('', { def: { n: Math.max(0, st.n), b: Math.max(0, st.b), c: Math.max(0, st.c), j: Math.max(0, st.j) } })];
-  if (kind === 'close') fields.push({ type: 'num', id: 'cash', label: 'Cash in the drawer', suffix: 'KES', def: Math.max(0, exp), hint: `Expected ${kes(exp)}` });
+// Blind counts (10 Nov 2026): whoever counts sees no book stock, no expected cash and
+// nothing pre-filled, so the figure entered is what is really there. The difference is
+// worked out by the server and shown only after saving; the manager sees it on Money
+// and in the activity log.
+const countedRows = (q: Q, cash?: number) => <>
+  <Row l="You counted" r={tot(q) ? eggs(tot(q)) : 'no eggs yet'} />
+  {cash != null && <Row l="Cash counted" r={kes(cash || 0)} />}
+  <div><span className="muted" style={{ fontSize: 13 }}>The app checks this against its records after you save.</span></div></>;
+const outcome = (d: number, cash?: number | null) => {
+  const m: string[] = [];
+  m.push(d ? `eggs ${d < 0 ? 'short' : 'over'} by ${eggs(Math.abs(d))}` : 'eggs match');
+  if (cash != null) m.push(cash ? `cash ${cash < 0 ? 'short' : 'over'} by ${kes(Math.abs(cash))}` : 'cash matches');
+  return m.join(', ') + ((d || cash) ? '. The farm manager can see it.' : '.');
+};
+export function countForm(_D: Dashboard, loc: string, kind: 'open' | 'close'): FormSpec {
+  const fields: Field[] = [...gradeFields('')];
+  if (kind === 'close') fields.push({ type: 'num', id: 'cash', label: 'Cash in the drawer', suffix: 'KES', hint: 'Count the notes and coins, then enter the total.' });
   return {
     title: kind === 'open' ? 'Opening count' : 'Close the day',
-    intro: <div className="calc"><Row l="Book stock" r={mix(st)} /></div>,
+    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>{kind === 'open' ? 'Count the trays on the shelf and enter what you see.' : 'Count the eggs left and the cash in the drawer, then enter what you see.'}</p>,
     fields, submit: kind === 'open' ? 'Open the day' : 'Close the day',
-    calc: (v) => { const d = tot(gradesOf(v)) - tot(st); return <>
-      {d ? <Bad l="Stock variance" r={eggs(d)} /> : <Ok>Stock matches the book</Ok>}
-      {kind === 'close' && (v.cash - exp ? <Bad l={`Cash ${v.cash < exp ? 'short' : 'over'}`} r={kes(Math.abs(v.cash - exp))} /> : <Ok>Cash matches</Ok>)}</>; },
+    calc: (v) => countedRows(gradesOf(v), kind === 'close' ? v.cash : undefined),
     onSubmit: async (v) => {
       const q = gradesOf(v);
       if (kind === 'open') {
         const r = await rpc<{ adj_n: number; adj_b: number; adj_c: number; adj_j: number }>('rpc_count_stock', { p_loc: loc, p_kind: 'open', p_n: q.n, p_b: q.b, p_j: q.j, p_c: q.c });
-        const d = r.adj_n + r.adj_b + r.adj_c + r.adj_j;
-        return d ? `Day opened. Stock off by ${eggs(d)}; the manager has been told.` : 'Day opened. Stock matches.';
+        return `Day opened: ${outcome(r.adj_n + r.adj_b + r.adj_c + r.adj_j)}`;
       }
       const r = await rpc<{ closing: { adj_n: number; adj_b: number; adj_c: number; adj_j: number }; cash: { diff: number } }>('rpc_shop_day',
         { p_loc: loc, p_date: null, p: { closing: q, cash_counted: v.cash } });
-      const d = r.closing.adj_n + r.closing.adj_b + r.closing.adj_c + r.closing.adj_j, msgs = [];
-      if (d) msgs.push(`stock off by ${eggs(d)}`);
-      if (r.cash?.diff) msgs.push(`cash ${r.cash.diff < 0 ? 'short' : 'over'} ${kes(Math.abs(r.cash.diff))}`);
-      return msgs.length ? `Day closed: ${msgs.join(', ')}.` : 'Day closed. Everything matches.';
+      return `Day closed: ${outcome(r.closing.adj_n + r.closing.adj_b + r.closing.adj_c + r.closing.adj_j, r.cash?.diff ?? 0)}`;
     },
   };
 }
 
-export function cashCountForm(D: Dashboard, loc: string): FormSpec {
-  const exp = balance(D, cashAcc(loc));
+export function cashCountForm(_D: Dashboard, loc: string): FormSpec {
   return {
     title: 'Count cash',
-    fields: [{ type: 'num', id: 'cash', label: 'Cash counted in the drawer', suffix: 'KES', hint: `Expected ${kes(exp)}` }],
-    calc: (v) => (v.cash - exp ? <Bad l={v.cash < exp ? 'Short' : 'Over'} r={kes(Math.abs(v.cash - exp))} /> : <Ok>Matches expected cash</Ok>),
-    onSubmit: async (v) => { const r = await rpc<{ diff: number }>('rpc_cash_count', { p_loc: loc, p_counted: v.cash }); return r.diff ? `Variance of ${kes(r.diff)} recorded.` : 'Cash matches.'; },
+    intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Count the notes and coins in the drawer and enter the total.</p>,
+    fields: [{ type: 'num', id: 'cash', label: 'Cash counted in the drawer', suffix: 'KES' }],
+    calc: (v) => <Row l="Cash counted" r={kes(v.cash || 0)} />,
+    onSubmit: async (v) => {
+      const r = await rpc<{ diff: number }>('rpc_cash_count', { p_loc: loc, p_counted: v.cash });
+      return r.diff ? `Cash counted: ${r.diff < 0 ? 'short' : 'over'} by ${kes(Math.abs(r.diff))}. The farm manager can see it.` : 'Cash counted: it matches.';
+    },
   };
 }
 

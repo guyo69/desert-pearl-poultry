@@ -69,7 +69,7 @@ function OutletToday(p: ViewProps) {
       <Kpi label="Sales today" value={kes(s.value)} sub={`${s.cnt} sale${s.cnt === 1 ? '' : 's'}`} />
       <Kpi label="Eggs sold" value={eggs(s.pcs)} />
       <Kpi label="On hand" value={eggs(tot(st))} sub={`${eggs(st.n + st.b)} normal`} />
-      <Kpi label="Cash in drawer" value={kes(balance(D, `CASH:${loc}`))} sub="expected" />
+      {D.me.role === 'pos' ? <CashCountKpi D={D} loc={loc} /> : <Kpi label="Cash in drawer" value={kes(balance(D, `CASH:${loc}`))} sub="expected" />}
     </div>
     <Card title="How customers paid" aside={<span className="muted">{kes(s.value)}</span>}>
       <div className="splitbar">{bar('cash', '--l-farm')}{bar('till', '--l-tuala')}{bar('paybill', '--l-van')}{bar('credit', '--l-lucky')}</div>
@@ -135,6 +135,13 @@ function OutletStock(p: ViewProps) {
   </>;
 }
 
+/** For the outlet attendant: whether the cash has been counted today, never the expected figure (blind count). */
+function CashCountKpi({ D, loc }: { D: ViewProps['D']; loc: string }) {
+  const c = D.cash_counts_today.filter((x) => x.location_id === loc).pop();
+  return c ? <Kpi label="Cash counted" value={kes(c.counted)} sub={c.diff ? `${c.diff < 0 ? 'short' : 'over'} ${kes(Math.abs(c.diff))}` : `matched at ${timeOf(c.recorded_at)}`} />
+    : <Kpi label="Cash counted" value="Not yet" sub="count it on Money" />;
+}
+
 export function PosSales(p: ViewProps) {
   const { D, version } = p, ui = useUI(), loc = myLoc(p);
   return <>
@@ -159,7 +166,8 @@ export function PosMoney(p: ViewProps) {
         <div><span>− Charges</span><span>{kes(-c.fees)}</span></div>
         <div><span>− Expenses paid in cash</span><span>{kes(-c.expenses)}</span></div>
         {(c.variance !== 0 || c.opening !== 0) && <div><span>± Count variance / opening balance</span><span>{kes(c.variance + c.opening)}</span></div>}
-        <div className="tot"><span>Expected cash in drawer</span><span>{kes(balance(D, acc))}</span></div>
+        {(D.me.role !== 'pos' || isVan(D, loc) || counted) ? <div className="tot"><span>Expected cash in drawer</span><span>{kes(balance(D, acc))}</span></div>
+          : <div className="tot"><span>Expected cash in drawer</span><span className="muted">after you count</span></div>}
       </div>
       {counted && <div className={`ok-line ${counted.diff ? 'sev-orange' : 'sev-ok'}`}><Icon name={counted.diff ? 'alert' : 'check'} />Counted {kes(counted.counted)} at {timeOf(counted.recorded_at)}{counted.diff ? ` · ${counted.diff < 0 ? 'short' : 'over'} ${kes(Math.abs(counted.diff))}` : ' · matched'}</div>}
       <div className="row-btns" style={{ marginTop: 14 }}>{!isVan(D, loc) && <button className="btn sm" onClick={() => ui.openForm(cashCountForm(D, loc))}><Icon name="cash" />Count cash</button>}
