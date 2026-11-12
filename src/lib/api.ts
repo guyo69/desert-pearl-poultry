@@ -3,6 +3,7 @@
 // Every write goes through a database function (rpc_*) that checks the
 // person's role and validates the numbers; errors come back as plain sentences.
 import type { ActivityRow, Dashboard } from './types';
+import { drop, entries, heldBack, keep, newKey, QUEUEABLE, update, type Entry } from './outbox';
 
 export class AppError extends Error {
   constructor(message: string, public code?: string, public status = 0, public data: Record<string, any> = {}) { super(message); }
@@ -15,7 +16,7 @@ export const AUTH_EVENT = 'dpv-auth';
 export const RELOAD_EVENT = 'dpv-reload';
 export const requestReload = () => dispatchEvent(new Event(RELOAD_EVENT));
 
-async function call<T>(route: string, body?: Record<string, unknown>, method: 'POST' | 'GET' = 'POST'): Promise<T> {
+async function call<T>(route: string, body?: Record<string, unknown>, method: 'POST' | 'GET' = 'POST', timeoutMs = 0): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`/api/gateway?r=${route}`, {
@@ -24,6 +25,7 @@ async function call<T>(route: string, body?: Record<string, unknown>, method: 'P
       cache: 'no-store',
       headers: method === 'POST' ? { 'Content-Type': 'application/json', 'X-DPV': '1' } : { 'X-DPV': '1' },
       body: method === 'POST' ? JSON.stringify(body ?? {}) : undefined,
+      signal: timeoutMs && typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(timeoutMs) : undefined,
     });
   } catch {
     throw new AppError('No connection. Check the internet and try again.', 'OFFLINE');
@@ -38,7 +40,59 @@ async function call<T>(route: string, body?: Record<string, unknown>, method: 'P
   return j as T;
 }
 
-export const rpc = <T = unknown>(fn: string, args: Record<string, unknown> = {}) => call<T>(`rpc/${fn}`, args);
+// ---------------------------------------------------------------- entries that can wait on the phone
+/** Thrown when an entry was kept on the phone to be sent later; forms show it as saved. */
+export class QueuedError extends Error {
+  constructor(public entry: Entry) { super('Saved on this phone. It will be sent as soon as there is a connection.'); }
+}
+let outboxUser: string | null = null, entryLabel = '';
+/** Field staff only: their everyday entries go through the outbox. null turns it off. */
+export const setOutboxUser = (id: string | null) => { outboxUser = id; };
+/** The form being saved, so the waiting list can say what each entry is. */
+export const setEntryLabel = (l: string) => { entryLabel = l; };
+/** No connection, a timeout or the gateway not answering: worth sending again later. */
+const unreachable = (e: unknown) => e instanceof AppError && (e.code === 'OFFLINE' || e.status >= 500);
+/** Signed out in the meantime: keep the entry; it goes once the same person signs in again. */
+const signedOut = (e: unknown) => e instanceof AppError && !!e.code && AUTH_CODES.has(e.code);
+const send = (e: Entry) => call<unknown>('rpc/rpc_queued', { p_key: e.key, p_fn: e.fn, p_args: e.args, p_made_at: e.made_at }, 'POST', 25_000);
+
+async function sendOrKeep<T>(fn: string, args: Record<string, unknown>, user: string): Promise<T> {
+  const e: Entry = { key: newKey(), user, fn, args, label: entryLabel || 'Entry', made_at: new Date().toISOString(), status: 'waiting' };
+  if (navigator.onLine) {
+    try { return await send(e) as T; } catch (x) { if (!unreachable(x) && !signedOut(x)) throw x; }
+  }
+  try { await keep(e); } catch { throw new AppError('No connection, and this phone could not keep the entry. Write it down and enter it later.', 'OFFLINE'); }
+  throw new QueuedError(e);
+}
+
+export const rpc = <T = unknown>(fn: string, args: Record<string, unknown> = {}): Promise<T> =>
+  (outboxUser && QUEUEABLE.has(fn) ? sendOrKeep<T>(fn, args, outboxUser) : call<T>(`rpc/${fn}`, args));
+
+let flushing: Promise<number> | null = null;
+/**
+ * Sends what waits on the phone for this person, oldest first. Stops at the
+ * first sign of no connection; an entry the server refuses is marked with the
+ * reason and kept for the person to see. Returns how many were recorded.
+ */
+export function flushOutbox(user: string): Promise<number> {
+  if (!flushing) flushing = (async () => {
+    let sent = 0;
+    try {
+      for (const e of await entries(user)) {
+        if (e.status === 'failed') continue;
+        if (heldBack(e)) { if (e.status !== 'held') await update(e.key, { status: 'held' }); continue; }
+        try { await send(e); await drop(e.key); sent++; }
+        catch (x) {
+          if (unreachable(x) || signedOut(x)) break;
+          await update(e.key, { status: 'failed', error: (x as Error).message });
+        }
+      }
+    } finally { flushing = null; }
+    if (sent) requestReload();
+    return sent;
+  })();
+  return flushing;
+}
 export const auth = <T = any>(action: string, body: Record<string, unknown> = {}) => call<T>(`auth/${action}`, body);
 export const staffAdmin = <T = any>(body: Record<string, unknown>) => call<T>('admin', body);
 export const pushKey = () => call<{ public_key: string }>('push-key', undefined, 'GET');

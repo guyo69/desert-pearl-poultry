@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { AUTH_EVENT, RELOAD_EVENT, authStatus, dataVersion, forgetLegacyStorage, loadDashboard, rpc, signOut as endSession, type AuthStatus } from './lib/api';
+import { AUTH_EVENT, RELOAD_EVENT, authStatus, dataVersion, flushOutbox, forgetLegacyStorage, loadDashboard, rpc, setOutboxUser, signOut as endSession, type AuthStatus, type AuthUser } from './lib/api';
+import { forgetFigures, readFigures, saveFigures } from './lib/outbox';
+import { OfflineBar } from './ui/Offline';
 import { alertsFor } from './lib/metrics';
 import type { Dashboard, Role } from './lib/types';
 import { collectForm, saleForm } from './forms/forms';
@@ -80,21 +82,28 @@ export default function App() {
       }
       last.current = s.state;
       setOffline(''); setSt(s);
-    } catch (e) { setOffline((e as Error).message); }
+    } catch (e) {
+      // no connection: field staff carry on with the figures kept on this phone
+      if (last.current === 'ready') return;
+      const c = await readFigures<AuthUser, Dashboard>();
+      if (c && !last.current) { last.current = 'ready'; setSt({ state: 'ready', user: c.who }); return; }
+      setOffline((e as Error).message);
+    }
   }, []);
   useEffect(() => {
     forgetLegacyStorage();
     check();
     const on = () => check();
     addEventListener(AUTH_EVENT, on);
-    return () => removeEventListener(AUTH_EVENT, on);
+    addEventListener('online', on);
+    return () => { removeEventListener(AUTH_EVENT, on); removeEventListener('online', on); };
   }, [check]);
-  const out = useCallback(async (everywhere = false) => { await endSession(everywhere); setNotice(''); last.current = ''; await check(); }, [check]);
+  const out = useCallback(async (everywhere = false) => { await endSession(everywhere); await forgetFigures(); setNotice(''); last.current = ''; await check(); }, [check]);
 
   if (!st) return <div className="center">{offline ? <div className="card" style={{ maxWidth: 440 }}><h3>Cannot reach Desert Pearl</h3><p className="muted">{offline}</p>
     <button className="btn" onClick={check}>Try again</button></div> : <div className="boot-mark" aria-label="Loading"><span /><span /><span /></div>}</div>;
   const u = st.user;
-  if (st.state === 'ready' && u) return <Signed key={u.id} signOut={out} />;
+  if (st.state === 'ready' && u) return <Signed key={u.id} user={u} signOut={out} />;
   if (st.state === 'set_password' && u) return <NewPassword forced user={u} onDone={check} onSignOut={() => out()} />;
   if (st.state === 'mfa_enroll' && u) return <MfaEnroll user={u} onDone={check} onSignOut={() => out()} />;
   if (st.state === 'mfa_verify' && u) return <MfaVerify user={u} onSignOut={() => out()}
@@ -105,9 +114,15 @@ export default function App() {
 const POLL_MS = 60_000;        // ask "has anything changed?" once a minute while the app is on screen
 const MIN_GAP_MS = 120_000;    // and fetch the full dashboard at most every 2 minutes for other people's changes
 
-function Signed({ signOut }: { signOut: (everywhere?: boolean) => void }) {
-  // farm data is kept in memory only: nothing is left on the device after sign-out
+/** Field staff can keep working with no connection; the owner and farm manager work online. */
+const FIELD = (role: string) => role !== 'owner' && role !== 'manager';
+
+function Signed({ user, signOut }: { user: AuthUser; signOut: (everywhere?: boolean) => void }) {
+  // field staff: the last figures are kept on this phone (removed at sign-out) so the app opens offline;
+  // the owner and farm manager keep them in memory only
+  const field = FIELD(user.role);
   const [D, setD] = useState<Dashboard | null>(null);
+  const [stale, setStale] = useState<number | null>(null);
   const [err, setErr] = useState('');
   const [version, setVersion] = useState(0);
   const seen = useRef<{ v: number; day: string; at: number }>({ v: -1, day: '', at: 0 });
@@ -119,9 +134,29 @@ function Signed({ signOut }: { signOut: (everywhere?: boolean) => void }) {
     try {
       const d = await loadDashboard(90);
       seen.current = { v: Number(d.version ?? -1), day: d.today, at: Date.now() };
-      setD(d); setErr(''); setVersion((v) => v + 1);
-    } catch (e) { setErr((e as Error).message); } finally { busy.current = false; }
-  }, []);
+      setD(d); setErr(''); setStale(null); setVersion((v) => v + 1);
+      if (field) saveFigures(user.id, user, d);
+    } catch (e) {
+      setErr((e as Error).message);
+      if (field) {
+        const c = await readFigures<AuthUser, Dashboard>(user.id);
+        if (c) { setD((x) => x ?? c.data); setStale((x) => x ?? c.at); }
+      }
+    } finally { busy.current = false; }
+  }, [field, user]);
+
+  // everyday entries go through the outbox, and whatever waits is sent as soon as possible
+  useEffect(() => {
+    setOutboxUser(field ? user.id : null);
+    if (!field) return () => setOutboxUser(null);
+    const go = () => { if (navigator.onLine) flushOutbox(user.id).catch(() => {}); };
+    go();
+    const every = window.setInterval(go, 20_000);
+    const vis = () => { if (document.visibilityState === 'visible') go(); };
+    addEventListener('online', go);
+    document.addEventListener('visibilitychange', vis);
+    return () => { setOutboxUser(null); clearInterval(every); removeEventListener('online', go); document.removeEventListener('visibilitychange', vis); };
+  }, [field, user.id]);
   /** Cheap check: download the dashboard only if something changed since the last one. */
   const check = useCallback(async (soon = false) => {
     if (document.visibilityState !== 'visible') return;
@@ -146,10 +181,10 @@ function Signed({ signOut }: { signOut: (everywhere?: boolean) => void }) {
   const out = (everywhere = false) => { setD(null); signOut(everywhere); };
   if (!D && !err) return <AppSkeleton />;
   if (!D) return <div className="center">{err ? <div className="card" style={{ maxWidth: 440 }}><h3>Cannot load the farm data</h3><p className="muted">{err}</p><div className="row-btns"><button className="btn" onClick={reload}>Try again</button><button className="btn alt" onClick={() => out()}>Sign out</button></div></div> : null}</div>;
-  return <UIProvider afterSave={reload} field={D.me.role !== 'owner' && D.me.role !== 'manager'}><Shell D={D} version={version} err={err} signOut={out} reload={reload} /></UIProvider>;
+  return <UIProvider afterSave={reload} field={D.me.role !== 'owner' && D.me.role !== 'manager'}><Shell D={D} version={version} err={err} signOut={out} reload={reload} stale={stale} user={field ? user.id : null} /></UIProvider>;
 }
 
-function Shell({ D, version, err, signOut, reload }: { D: Dashboard; version: number; err: string; signOut: (everywhere?: boolean) => void; reload: () => void }) {
+function Shell({ D, version, err, signOut, reload, stale, user }: { D: Dashboard; version: number; err: string; signOut: (everywhere?: boolean) => void; reload: () => void; stale: number | null; user: string | null }) {
   const ui = useUI(), online = useOnline();
   const tabs = ROLE_TABS[D.me.role];
   const [tab, setTab] = useState<string>(() => { const h = location.hash.slice(1).replace(/^setup$/, 'settings'); return tabs.includes(h) ? h : tabs[0]; });
@@ -205,7 +240,6 @@ function Shell({ D, version, err, signOut, reload }: { D: Dashboard; version: nu
   });
 
   return <>
-    {!online && <div className="offline">Offline: showing the last figures loaded. Records can be saved again once the connection is back.</div>}
     <header className="appbar"><div className="appbar-in">
       <button className="iconbtn" onClick={() => setDrawer(true)} aria-label="Menu"><Icon name="menu" /></button>
       <div className="ttl"><b>{title}</b><small>{[D.me.display_name, D.me.display_name.includes(ROLE_NAME[D.me.role]) || D.me.display_name === ROLE_NAME[D.me.role] ? '' : ROLE_NAME[D.me.role], loc?.name].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).join(' · ')}</small></div>
@@ -213,13 +247,14 @@ function Shell({ D, version, err, signOut, reload }: { D: Dashboard; version: nu
       <button className="iconbtn" onClick={() => openHelp(help, tab)} aria-label="Help" data-tip="help"><Icon name="help" /></button>
       <button className="iconbtn" onClick={openBell} aria-label="Alerts" data-tip="bell">{<Icon name="bell" />}{myAlerts.length + unread.length > 0 && <span className="badge">{myAlerts.length + unread.length}</span>}</button>
     </div></header>
+    <OfflineBar online={online} stale={stale} user={user} />
     <div className="shell">
       <nav className="rail" aria-label="Sections"><div className="rail-loc">{loc?.name ?? 'All locations'}</div>
         {tabs.map((t) => <button key={t} aria-current={tab === t} onClick={() => go(t)} data-tip={`tab:${t}`}><Icon name={TABS[t].icon} />{TABS[t].label}</button>)}
         {!tabs.includes('me') && !tabs.includes('settings') && <button onClick={() => go('me')}><Icon name="user" />My account</button>}</nav>
       <main key={tab}>
         {D.me.backup_codes_left !== undefined && D.me.mfa_enabled && D.me.backup_codes_left <= 2 && tab !== 'me' && <div className="banner warn"><div><b>{D.me.backup_codes_left} backup code{D.me.backup_codes_left === 1 ? '' : 's'} left</b><p>Make a new set so you can still sign in if your phone is lost.</p></div><button className="btn sm" onClick={() => go('me')}>My account</button></div>}
-        {err && online && <div className="banner warn"><div><b>Could not refresh</b><p>{err}</p></div><button className="btn sm" onClick={reload}>Try again</button></div>}
+        {err && online && stale == null && <div className="banner warn"><div><b>Could not refresh</b><p>{err}</p></div><button className="btn sm" onClick={reload}>Try again</button></div>}
         <ScreenGuard name={tabs.includes(tab) || tab === 'me' ? tab : tabs[0]}>{(tabs.includes(tab) || tab === 'me' ? TABS[tab] : TABS[tabs[0]]).view(props)}</ScreenGuard>
       </main>
     </div>

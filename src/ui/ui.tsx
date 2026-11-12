@@ -1,6 +1,7 @@
 // Bottom-sheet forms, info panels and toasts, shared by every screen.
 import { createContext, Fragment, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Icon } from './icons';
+import { QueuedError, setEntryLabel } from '../lib/api';
 
 export type V = Record<string, any>;
 export type Field =
@@ -177,6 +178,7 @@ function FormSheet({ spec, stepped, onSaved, onDone, onClose, onAgain }: { spec:
   const [busy, setBusy] = useState(false);
   const [cur, setCur] = useState(0);
   const [done, setDone] = useState<string | null>(null);
+  const [later, setLater] = useState(false);
   const body = useRef<HTMLDivElement>(null);
   const set = useCallback((p: V) => setRaw((r) => ({ ...r, ...p })), []);
   const v = values(spec.fields, raw);
@@ -194,9 +196,14 @@ function FormSheet({ spec, stepped, onSaved, onDone, onClose, onAgain }: { spec:
     if (busy) return;
     setBusy(true); setErr('');
     try {
+      setEntryLabel(spec.title);
       const msg = await spec.onSubmit(v);
       if (steps) { setDone(msg || 'Saved.'); onSaved(); } else onDone(msg || 'Saved.');
-    } catch (x) { setErr(x instanceof Error ? x.message : String(x)); if (steps) setCur(last); }
+    } catch (x) {
+      // no connection: the entry is kept on the phone and sent later, so this counts as saved
+      if (x instanceof QueuedError) { setLater(true); if (steps) setDone('It is sent on its own as soon as there is a connection.'); else onDone(x.message); return; }
+      setErr(x instanceof Error ? x.message : String(x)); if (steps) setCur(last);
+    }
     finally { setBusy(false); }
   };
   const submit = (e: React.FormEvent) => { e.preventDefault(); if (steps && at < last) setCur(at + 1); else save(); };
@@ -204,8 +211,8 @@ function FormSheet({ spec, stepped, onSaved, onDone, onClose, onAgain }: { spec:
   if (done !== null) return (
     <div className="sheet done" role="dialog" aria-label="Saved">
       <div className="sheet-b done-b">
-        <span className="done-tick" aria-hidden="true"><Icon name="check" /></span>
-        <h2>Saved</h2>
+        <span className={`done-tick${later ? ' later' : ''}`} aria-hidden="true"><Icon name={later ? 'clock' : 'check'} /></span>
+        <h2>{later ? 'Saved on this phone' : 'Saved'}</h2>
         <p>{done}</p>
       </div>
       <div className="sheet-f">

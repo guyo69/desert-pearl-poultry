@@ -730,3 +730,20 @@ main{animation:none}
 .stepper input{-moz-appearance:textfield;appearance:textfield}
 .stepped input::-webkit-outer-spin-button,.stepped input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .stepped input[type=number]{-moz-appearance:textfield;appearance:textfield}
+
+/* ===================================================================
+   12 Nov 2026: working with no connection
+   =================================================================== */
+.offline-bar{position:sticky;top:calc(52px + env(safe-area-inset-top,0px));z-index:29;display:flex;align-items:center;gap:10px;padding:9px max(16px,env(safe-area-inset-left,0px));
+  background:color-mix(in srgb,var(--info) 12%,var(--bg));color:var(--fg);font-size:14px;font-weight:550;border-bottom:.5px solid var(--line)}
+.offline-bar.off{background:color-mix(in srgb,var(--f-watch) 20%,var(--bg))}
+.offline-bar.need{background:color-mix(in srgb,var(--f-none) 12%,var(--bg))}
+.offline-bar svg{width:18px;height:18px;flex:none}
+.offline-bar span{flex:1;min-width:0}
+.offline-bar .lnk{min-height:36px;padding:6px 12px}
+.outbox{display:flex;flex-direction:column;gap:12px}
+.ob-note{display:block;margin-top:4px;white-space:normal!important;color:var(--muted)}
+.ob-note.bad{color:var(--f-none)}
+.li .act.danger{background:color-mix(in srgb,var(--f-none) 14%,transparent);color:var(--f-none)}
+.done-tick.later{background:var(--info)}
+.done-tick.later svg{stroke-dasharray:none;stroke-dashoffset:0;animation:none}
