@@ -3,6 +3,7 @@ import { BANDS, band, feedInfo, locColor, tankInfo, type Alert, type Band } from
 import { dshort, n0, pct, timeOf } from '../lib/format';
 import type { Dashboard, Sev } from '../lib/types';
 import { Icon } from './icons';
+import { WORK_COLOR, type Work } from './work';
 
 export const sevVar = (s: Sev | 'ok') => `var(${s === 'red' ? '--f-none' : s === 'orange' ? '--f-low' : s === 'amber' ? '--f-watch' : s === 'ok' ? '--f-full' : '--info'})`;
 export const sevClass = (s: Sev | 'ok') => `sev-${s}`;
@@ -17,10 +18,14 @@ export const LocDot = ({ id }: { id: string }) => <span className="locdot" style
 export function Legend({ items }: { items: [string, string][] }) {
   return <div className="legend">{items.map(([c, l]) => <span key={l}><i style={{ background: c.startsWith('--') ? `var(${c})` : c }} />{l}</span>)}</div>;
 }
-export function Tile({ icon, label, color, onClick }: { icon: string; label: string; color: string; onClick: () => void }) {
-  return <button className="tile" onClick={onClick} data-tip={`tile:${label}`}><span className="ic" style={{ background: `var(${color})` }}><Icon name={icon} /></span>{label}</button>;
+/** A big action button. `work` gives it the colour of its kind of work (ui/work.ts). */
+export function Tile({ icon, label, work, onClick }: { icon: string; label: string; work: Work; onClick: () => void }) {
+  return <button className={`tile w-${work}`} onClick={onClick} data-tip={`tile:${label}`}><span className="ic" style={{ background: `var(${WORK_COLOR[work]})` }}><Icon name={icon} /></span>{label}</button>;
 }
-export function Empty({ children }: { children: ReactNode }) { return <div className="empty">{children}</div>; }
+/** Nothing to show yet: say what to do, and offer the button that does it. */
+export function Empty({ children, icon, action }: { children: ReactNode; icon?: string; action?: ReactNode }) {
+  return <div className="empty">{icon && <Icon name={icon} />}<span>{children}</span>{action}</div>;
+}
 export function Delta({ a, b, invert, pts }: { a: number; b: number; invert?: boolean; pts?: boolean }) {
   if (!Number.isFinite(a) || !Number.isFinite(b) || (!pts && !b)) return <span className="muted">–</span>;
   const d = pts ? a - b : (a - b) / Math.abs(b);
@@ -36,7 +41,7 @@ export function Seg<T extends string>({ value, options, onChange }: { value: T; 
 }
 
 export function AlertList({ list, limit }: { list: Alert[]; limit?: number }) {
-  if (!list.length) return <Empty><Icon name="check" /><br />Nothing needs attention.</Empty>;
+  if (!list.length) return <Empty icon="check">Nothing needs attention.</Empty>;
   return <div className="alerts">{list.slice(0, limit ?? 99).map((a, i) => (
     <div className="alert" key={i}><span className="stripe" style={{ background: sevVar(a.sev) }} /><div style={{ minWidth: 0 }}><b>{a.title}</b><p>{a.body}</p></div></div>
   ))}</div>;

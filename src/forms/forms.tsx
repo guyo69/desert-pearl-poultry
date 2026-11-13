@@ -281,7 +281,7 @@ export function medForm(D: Dashboard, opts: { startNew?: boolean } = {}): FormSp
 
 export const mortForm = (D: Dashboard): FormSpec => ({
   again: true,
-  title: 'Mortality',
+  title: 'Deaths',
   fields: [
     { type: 'select', id: 'house', label: 'House', options: houseOpts(D) },
     { type: 'num', id: 'n', label: 'Birds', suffix: 'birds', def: 1 },
@@ -618,7 +618,7 @@ export function confirmIssueForm(_D: Dashboard, x: StorePending): FormSpec {
 }
 
 /* ---------------- stock movement ---------------- */
-/** Issue eggs: send stock from one location to another. One destination per entry, chosen from a list. */
+/** Send eggs: stock from one location to another. One destination per entry, chosen from a list. */
 /** Send eggs to another location. For the van: "Deliver eggs", and `leftover` fills in everything still on board. */
 export function dispatchForm(D: Dashboard, from: string, opts: { leftover?: boolean } = {}): FormSpec {
   const st = stockNow(D, from), van = isVan(D, from);
@@ -626,7 +626,7 @@ export function dispatchForm(D: Dashboard, from: string, opts: { leftover?: bool
   const name = (id: unknown) => dests.find((l) => l.id === id)?.name ?? '';
   return {
     again: true,
-    title: opts.leftover ? 'Drop off what is left' : van ? 'Deliver eggs' : 'Issue eggs',
+    title: opts.leftover ? 'Drop off what is left' : van ? 'Deliver eggs' : 'Send eggs',
     intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>{opts.leftover ? 'The van ends the day empty. Leave what is on board at the farm or an outlet; they confirm the count.'
       : van ? 'Deliver eggs from the van to the farm or an outlet. They confirm the count when it arrives.'
       : `Send eggs from ${locName(D, from)} to another location. That location confirms the count when they arrive.`}</p>,
@@ -636,7 +636,7 @@ export function dispatchForm(D: Dashboard, from: string, opts: { leftover?: bool
       ...gradeFields('', opts.leftover ? { def: { n: Math.max(0, st.n + st.b), c: Math.max(0, st.c), j: Math.max(0, st.j) } } : {}),
       { type: 'text', id: 'note', label: 'Note (optional)', placeholder: 'e.g. vehicle or who is carrying them' },
     ],
-    submit: opts.leftover ? 'Drop off' : van ? 'Deliver' : 'Issue eggs',
+    submit: opts.leftover ? 'Drop off' : van ? 'Deliver' : 'Send eggs',
     calc: (v) => {
       const q = gradesOf(v);
       if (!v.to) return <div><span className="muted">Choose where the eggs are going</span></div>;
@@ -660,10 +660,10 @@ export function receiveForm(D: Dashboard, x: Transfer): FormSpec {
   const sent = sentOf(x);
   const only = ITEMS.filter((i) => sent[i.toLowerCase() as keyof Q] > 0);
   return {
-    title: `Receive from ${locName(D, x.from_loc)}`,
+    title: `Eggs arrived from ${locName(D, x.from_loc)}`,
     intro: <div className="calc"><Row l={`Sent ${dlabel(x.d)}`} r={mix(sent)} /><div><span>Count what arrived in good condition. Broken eggs go under Damaged.</span></div></div>,
     fields: [...gradeFields('', { def: sent, only: only.length ? only : ['N'], dmg: 'Damaged on arrival' })],
-    submit: 'Confirm receipt',
+    submit: 'Save what arrived',
     calc: (v) => {
       const q = gradesOf(v), short = tot(sent) - tot(q);
       if (q.n > sent.n || q.b > sent.b || q.c > sent.c || q.j > sent.j) return <Bad l="More than was sent" r="Check the count" />;
@@ -686,7 +686,7 @@ export function receiveForm(D: Dashboard, x: Transfer): FormSpec {
 export function issueForm(D: Dashboard, loc: string): FormSpec {
   const st = stockNow(D, loc);
   return {
-    title: 'Eggs out, no sale',
+    title: 'Eggs given away',
     intro: <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>For eggs that leave without a sale: owner or staff use, eggs returned to a supplier. Sending to another location is <b>Issue eggs</b>; a customer paying later is a sale paid on <b>Credit</b>.</p>,
     fields: [
       ...dateFields(D),

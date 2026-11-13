@@ -27,7 +27,7 @@ function VanToday(p: ViewProps) {
     <VanSteps D={D} loc={loc} />
     {it.map((x) => <div className="banner info" key={x.id}><div><b>Load waiting at {D.locations.find((l) => l.id === x.from_loc)?.short}</b>
       <p>{mix({ n: x.sent_n, b: x.sent_b ?? 0, c: x.sent_c, j: x.sent_j })} · sent {timeOf(x.recorded_at)}</p></div>
-      <button className="btn" onClick={() => ui.openForm(receiveForm(D, x))}><Icon name="inbox" />Receive</button></div>)}
+      <button className="btn" onClick={() => ui.openForm(receiveForm(D, x))}><Icon name="inbox" />Eggs loaded</button></div>)}
     <div className="kpis">
       <Kpi label="On board now" value={eggs(left)} sub={left ? mix(st) : 'Van is empty'} />
       <Kpi label="Sold on the road" value={kes(s.value)} sub={`${s.cnt} sale${s.cnt === 1 ? '' : 's'}`} />
@@ -35,14 +35,14 @@ function VanToday(p: ViewProps) {
       <Kpi label="Cash with the driver" value={kes(balance(D, `CASH:${loc}`))} sub="bank it or send it" />
     </div>
     <div className="tiles">
-      <Tile icon="inbox" label="Receive a load" color="--info" onClick={() => it[0] ? ui.openForm(receiveForm(D, it[0])) : ui.toast('No loads waiting for the van.')} />
-      <Tile icon="truck" label="Deliver eggs" color="--l-tuala" onClick={() => ui.openForm(dispatchForm(D, loc))} />
-      <Tile icon="receipt" label="Record sale" color="--l-farm" onClick={() => ui.openForm(saleForm(D, loc))} />
-      <Tile icon="crack" label="Damaged eggs" color="--f-none" onClick={() => ui.openForm(breakageForm(D, loc))} />
-      <Tile icon="count" label={left ? 'Drop off what is left' : 'Van is empty ✓'} color="--l-van" onClick={() => left ? ui.openForm(dispatchForm(D, loc, { leftover: true })) : ui.toast('Nothing on board.')} />
-      <Tile icon="cash" label="Credit paid" color="--l-farm" onClick={() => ui.openForm(creditPaidForm(D, loc))} />
-      <Tile icon="swap" label="Bank or send cash" color="--l-rayan" onClick={() => ui.openForm(moveForm(D, loc))} />
-      <Tile icon="wallet" label="Expense" color="--l-lucky" onClick={() => ui.openForm(expenseForm(D, loc, false))} />
+      <Tile icon="inbox" label="Eggs loaded" work="in" onClick={() => it[0] ? ui.openForm(receiveForm(D, it[0])) : ui.toast('No loads waiting for the van.')} />
+      <Tile icon="truck" label="Deliver eggs" work="out" onClick={() => ui.openForm(dispatchForm(D, loc))} />
+      <Tile icon="receipt" label="Record sale" work="sell" onClick={() => ui.openForm(saleForm(D, loc))} />
+      <Tile icon="crack" label="Damaged eggs" work="loss" onClick={() => ui.openForm(breakageForm(D, loc))} />
+      <Tile icon="count" label={left ? 'Drop off what is left' : 'Van is empty ✓'} work="out" onClick={() => left ? ui.openForm(dispatchForm(D, loc, { leftover: true })) : ui.toast('Nothing on board.')} />
+      <Tile icon="cash" label="Credit paid" work="sell" onClick={() => ui.openForm(creditPaidForm(D, loc))} />
+      <Tile icon="swap" label="Bank or send cash" work="spend" onClick={() => ui.openForm(moveForm(D, loc))} />
+      <Tile icon="wallet" label="Expense" work="spend" onClick={() => ui.openForm(expenseForm(D, loc, false))} />
     </div>
     {(D.credits ?? []).some((c) => c.location_id === loc) && <OutstandingCredits D={D} loc={loc} limit={4} />}
     {A.length > 0 && <Card title="For your attention"><AlertList list={A} /></Card>}
@@ -60,11 +60,11 @@ function OutletToday(p: ViewProps) {
     <ShopSteps D={D} loc={loc} />
     {it.map((x) => <div className="banner info" key={x.id}><div><b>Delivery on the way from {D.locations.find((l) => l.id === x.from_loc)?.short}</b>
       <p>{mix({ n: x.sent_n, b: x.sent_b ?? 0, c: x.sent_c, j: x.sent_j })} · sent {timeOf(x.recorded_at)}</p></div>
-      <button className="btn" onClick={() => ui.openForm(receiveForm(D, x))}><Icon name="inbox" />Receive</button></div>)}
-    <Card title="Issue eggs"><div className="li" style={{ border: 0, padding: 0 }}>
+      <button className="btn" onClick={() => ui.openForm(receiveForm(D, x))}><Icon name="inbox" />Eggs arrived</button></div>)}
+    <Card title="Send eggs"><div className="li" style={{ border: 0, padding: 0 }}>
       <span className="av" style={{ background: 'var(--l-tuala)' }}><Icon name="truck" /></span>
       <div className="mid"><b>Send to another location</b><small>They confirm the count on arrival.</small></div>
-      <button className="btn sm" onClick={() => ui.openForm(dispatchForm(D, loc))}>Issue eggs</button></div></Card>
+      <button className="btn sm" onClick={() => ui.openForm(dispatchForm(D, loc))}>Send eggs</button></div></Card>
     <div className="kpis">
       <Kpi label="Sales today" value={kes(s.value)} sub={`${s.cnt} sale${s.cnt === 1 ? '' : 's'}`} />
       <Kpi label="Eggs sold" value={eggs(s.pcs)} />
@@ -76,15 +76,15 @@ function OutletToday(p: ViewProps) {
       <Legend items={[['--l-farm', `Cash ${n0(s.cash)}`], ['--l-tuala', `Till ${n0(s.till)}`], ['--l-van', `Paybill ${n0(s.paybill)}`], ...(credit ? [['--l-lucky', `Credit ${n0(credit)}`] as [string, string]] : [])]} /></Card>
     {(D.credits ?? []).some((c) => c.location_id === loc) && <OutstandingCredits D={D} loc={loc} limit={4} />}
     <div className="tiles">
-      <Tile icon="receipt" label="Record sale" color="--l-farm" onClick={() => ui.openForm(saleForm(D, loc))} />
-      <Tile icon="inbox" label="Receive stock" color="--info" onClick={() => it[0] ? ui.openForm(receiveForm(D, it[0])) : ui.toast('No deliveries waiting for you.')} />
-      <Tile icon="truck" label="Issue eggs" color="--l-tuala" onClick={() => ui.openForm(dispatchForm(D, loc))} />
-      <Tile icon="crack" label="Damaged eggs" color="--f-none" onClick={() => ui.openForm(breakageForm(D, loc))} />
-      <Tile icon="list" label="Daily stock sheet" color="--l-rayan" onClick={() => ui.openForm(shopDayForm(D, loc))} />
-      <Tile icon="cash" label="Credit paid" color="--l-farm" onClick={() => ui.openForm(creditPaidForm(D, loc))} />
-      <Tile icon="wallet" label="Expense" color="--l-lucky" onClick={() => ui.openForm(expenseForm(D, loc, false))} />
-      <Tile icon="swap" label="Move money" color="--l-rayan" onClick={() => ui.openForm(moveForm(D, loc))} />
-      <Tile icon="count" label={closed ? 'Closed ✓' : 'Close the day'} color="--l-van" onClick={() => ui.openForm(countForm(D, loc, 'close'))} />
+      <Tile icon="receipt" label="Record sale" work="sell" onClick={() => ui.openForm(saleForm(D, loc))} />
+      <Tile icon="inbox" label="Eggs arrived" work="in" onClick={() => it[0] ? ui.openForm(receiveForm(D, it[0])) : ui.toast('No deliveries waiting for you.')} />
+      <Tile icon="truck" label="Send eggs" work="out" onClick={() => ui.openForm(dispatchForm(D, loc))} />
+      <Tile icon="crack" label="Damaged eggs" work="loss" onClick={() => ui.openForm(breakageForm(D, loc))} />
+      <Tile icon="list" label="Daily stock sheet" work="sheet" onClick={() => ui.openForm(shopDayForm(D, loc))} />
+      <Tile icon="cash" label="Credit paid" work="sell" onClick={() => ui.openForm(creditPaidForm(D, loc))} />
+      <Tile icon="wallet" label="Expense" work="spend" onClick={() => ui.openForm(expenseForm(D, loc, false))} />
+      <Tile icon="swap" label="Move money" work="spend" onClick={() => ui.openForm(moveForm(D, loc))} />
+      <Tile icon="count" label={closed ? 'Closed ✓' : 'Close the day'} work="check" onClick={() => ui.openForm(countForm(D, loc, 'close'))} />
     </div>
     {A.length > 0 && <Card title="For your attention"><AlertList list={A} /></Card>}
   </>;
@@ -101,7 +101,7 @@ function VanStock(p: ViewProps) {
   return <>
     <Card title="The van's load today" aside={<span className="muted">no counts: it ends the day empty</span>}>
       <div className="tblw"><table><thead><tr><th></th><th>Normal</th><th>Jumbo</th><th>Cracked</th></tr></thead>
-        <tbody>{row('On board this morning', L.open)}{row('+ Loaded (received)', L.recv, '+')}{row('− Delivered', L.out, '−')}{row('− Sold', L.sold, '−')}{row('− Damaged', L.brk, '−')}{row('− Out, no sale', L.iss, '−')}</tbody>
+        <tbody>{row('On board this morning', L.open)}{row('+ Loaded (received)', L.recv, '+')}{row('− Delivered', L.out, '−')}{row('− Sold', L.sold, '−')}{row('− Damaged', L.brk, '−')}{row('− Given away', L.iss, '−')}</tbody>
         <tfoot>{row('On board now', L.close)}</tfoot></table></div>
       <div className="row-btns" style={{ marginTop: 12 }}>
         <button className="btn sm" onClick={() => ui.openForm(dispatchForm(D, loc))}><Icon name="truck" />Deliver eggs</button>
@@ -121,15 +121,15 @@ function OutletStock(p: ViewProps) {
   return <>
     <Card title="Today's stock sheet" aside={<span className="muted">{D.locations.find((l) => l.id === loc)?.name}</span>}>
       <div className="tblw"><table><thead><tr><th></th><th>Normal</th><th>Jumbo</th><th>Cracked</th></tr></thead>
-        <tbody>{row('Opening', L.open)}{loc === 'FARM' && row('+ Collected', L.coll, '+')}{row('+ Received', L.recv, '+')}{row('− Issued (sent)', L.out, '−')}{row('− Out, no sale', L.iss, '−')}{row('− Sold', L.sold, '−')}{row('− Damaged', L.brk, '−')}{row('± Count variance', L.adj)}</tbody>
+        <tbody>{row('Opening', L.open)}{loc === 'FARM' && row('+ Collected', L.coll, '+')}{row('+ Received', L.recv, '+')}{row('− Sent', L.out, '−')}{row('− Given away', L.iss, '−')}{row('− Sold', L.sold, '−')}{row('− Damaged', L.brk, '−')}{row('± Count variance', L.adj)}</tbody>
         <tfoot>{row('On hand (expected)', L.close)}</tfoot></table></div>
       <div className="row-btns" style={{ marginTop: 12 }}><button className="btn sm alt" onClick={() => ui.openForm(countForm(D, loc, 'open'))}><Icon name="count" />Opening count</button>
         <button className="btn sm" onClick={() => ui.openForm(countForm(D, loc, 'close'))}><Icon name="count" />Close the day</button>
-        <button className="btn sm alt" onClick={() => ui.openForm(dispatchForm(D, loc))}><Icon name="truck" />Issue eggs</button>
-        <button className="btn sm alt" onClick={() => ui.openForm(issueForm(D, loc))}><Icon name="box" />Out, no sale</button>
+        <button className="btn sm alt" onClick={() => ui.openForm(dispatchForm(D, loc))}><Icon name="truck" />Send eggs</button>
+        <button className="btn sm alt" onClick={() => ui.openForm(issueForm(D, loc))}><Icon name="box" />Eggs given away</button>
         <button className="btn sm alt" onClick={() => ui.openForm(shopDayForm(D, loc))}><Icon name="list" />Daily stock sheet</button></div></Card>
     <Card title="Last 7 days" aside={<span className="muted">pieces</span>}><div className="tblw"><table>
-      <thead><tr><th>Day</th><th>Opening</th><th>In</th><th>Issued / out</th><th>Damaged</th><th>Sold</th><th>Closing</th></tr></thead>
+      <thead><tr><th>Day</th><th>Opening</th><th>In</th><th>Sent / given</th><th>Damaged</th><th>Sold</th><th>Closing</th></tr></thead>
       <tbody>{range(addDays(D.today, -6), D.today).reverse().map((d) => { const x = dayLedger(D, loc, d);
         return <tr key={d}><td>{dlabel(d)}</td><td>{n0(tot(x.open))}</td><td>{n0(tot(x.recv) + tot(x.coll))}</td><td>{tot(x.iss) + tot(x.out) ? n0(tot(x.iss) + tot(x.out)) : '–'}</td><td>{tot(x.brk) || '–'}</td><td>{n0(tot(x.sold))}</td><td>{n0(tot(x.close))}</td></tr>; })}</tbody></table></div></Card>
   </>;
@@ -181,6 +181,6 @@ export function PosMoney(p: ViewProps) {
       <div className={`ok-line ${match ? 'sev-ok' : 'sev-red'}`}><Icon name={match ? 'check' : 'alert'} />{match ? 'Every sale is paid or on credit to a named customer.' : 'Payments do not match sales.'}</div></Card>
     <OutstandingCredits D={D} loc={loc} />
     <Card title="Money records"><RecordList D={D} version={version} loc={loc} kinds={['money', 'cash', 'credit']} canVoid={false} limit={25} /></Card>
-    {s.cnt === 0 && c.moveIn === 0 && c.moveOut === 0 && <Empty>No money activity yet today.</Empty>}
+    {s.cnt === 0 && c.moveIn === 0 && c.moveOut === 0 && <Empty icon="cash">No money recorded yet today. Sales, banking and expenses show here as they are saved.</Empty>}
   </>;
 }

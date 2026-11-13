@@ -258,7 +258,9 @@ function Shell({ D, version, err, signOut, reload, stale, user }: { D: Dashboard
         <ScreenGuard name={tabs.includes(tab) || tab === 'me' ? tab : tabs[0]}>{(tabs.includes(tab) || tab === 'me' ? TABS[tab] : TABS[tabs[0]]).view(props)}</ScreenGuard>
       </main>
     </div>
-    <nav className="bnav" aria-label="Sections">{tabs.slice(0, 5).map((t) => <button key={t} aria-current={tab === t} onClick={() => go(t)} data-tip={`tab:${t}`}><span className="pill"><Icon name={TABS[t].icon} /></span><span>{TABS[t].label}</span></button>)}</nav>
+    {/* at most four tabs on the phone's bar, then More for the rest (all of them are in the menu) */}
+    <nav className="bnav" aria-label="Sections">{tabs.slice(0, tabs.length > 4 ? 4 : 5).map((t) => <button key={t} aria-current={tab === t} onClick={() => go(t)} data-tip={`tab:${t}`}><span className="pill"><Icon name={TABS[t].icon} /></span><span>{TABS[t].label}</span></button>)}
+      {tabs.length > 4 && <button aria-current={!tabs.slice(0, 4).includes(tab)} onClick={() => setDrawer(true)} data-tip="tab:more"><span className="pill"><Icon name="menu" /></span><span>More</span></button>}</nav>
     <TipHost D={D} tab={tab} paused={drawer || !online} />
     {fab && <button className="fab" onClick={fab.f} data-tip="fab"><Icon name={fab.icon} />{fab.label}</button>}
     {drawer && <div className="drawer" onClick={(e) => { if (e.target === e.currentTarget) setDrawer(false); }}>

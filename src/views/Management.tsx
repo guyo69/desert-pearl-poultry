@@ -84,7 +84,7 @@ export function Alerts({ D, version }: ViewProps) {
         <div className="li" key={x.id}><span className="av" style={{ background: 'var(--l-tuala)' }}><Icon name="truck" /></span>
           <div className="mid"><b>{D.locations.find((l) => l.id === x.from_loc)?.short} → {D.locations.find((l) => l.id === x.to_loc)?.short}</b><small>Sent {dlabel(x.d)}</small></div>
           <div className="end">{eggs(x.sent_n + (x.sent_b ?? 0) + x.sent_c + x.sent_j)}{canEnter(D) && <div><button className="act" onClick={() => ui.openForm(receiveForm(D, x))}>Receive</button></div>}</div></div>))}</div>
-        : <Empty>All deliveries confirmed.</Empty>}</Card>
+        : <Empty icon="check">All deliveries confirmed. Eggs on the way show here until the receiver counts them.</Empty>}</Card>
     </div>
     <Card title="Notifications" aside={<span className="muted">last 14 days</span>}><NoticeList D={D} /></Card>
   </>;
@@ -103,7 +103,7 @@ export function Stock({ D }: ViewProps) {
       <tbody>{rows.map((r) => <tr key={r.l.id}><td><LocDot id={r.l.id} />{r.l.name}</td><td>{eggs(r.s.n + r.s.b)}</td><td>{r.s.j ? `${r.s.j} pc` : '–'}</td><td>{r.s.c ? eggs(r.s.c) : '–'}</td><td>{r.it ? eggs(r.it) : '–'}</td></tr>)}</tbody>
       <tfoot><tr><td>All locations</td><td>{eggs(T.n + T.b)}</td><td>{T.j} pc</td><td>{eggs(T.c)}</td><td>{T.it ? eggs(T.it) : '–'}</td></tr></tfoot></table></div></Card>
     <Card title="Today's stock movement" aside={<span className="muted">pieces</span>}><div className="tblw"><table>
-      <thead><tr><th>Location</th><th>Opening</th><th>+ Collected</th><th>+ Received</th><th>− Issued (sent)</th><th>− Out, no sale</th><th>− Sold</th><th>− Damaged</th><th>± Count</th><th>On hand</th></tr></thead>
+      <thead><tr><th>Location</th><th>Opening</th><th>+ Collected</th><th>+ Received</th><th>− Sent</th><th>− Given away</th><th>− Sold</th><th>− Damaged</th><th>± Count</th><th>On hand</th></tr></thead>
       <tbody>{D.locations.map((l) => { const L = dayLedger(D, l.id, D.today); return <tr key={l.id}><td><LocDot id={l.id} />{l.short}</td><td>{n0(tot(L.open))}</td><td>{v(tot(L.coll))}</td><td>{v(tot(L.recv))}</td><td>{v(tot(L.out))}</td><td>{v(tot(L.iss))}</td><td>{v(tot(L.sold))}</td><td>{v(tot(L.brk))}</td><td>{v(tot(L.adj))}</td><td><b>{n0(tot(L.close))}</b></td></tr>; })}</tbody></table></div>
       <p className="muted" style={{ margin: '10px 0 0', fontSize: 13 }}>Each row balances: opening + collected + received − issued (sent) − out, no sale − sold − damaged ± count = on hand. Damaged at collection never enters stock.</p></Card>
     <div className="grid2">
@@ -242,7 +242,7 @@ export function Report({ D, version }: ViewProps) {
     <Card title="Recommended actions">{W.actions.length ? <div className="tblw"><table className="actions-tbl">
       <thead><tr><th>Priority</th><th>Action</th><th>Who</th></tr></thead>
       <tbody>{W.actions.map((r, i) => <tr key={i}><td><span className={`chip ${sevClass(r.priority === 'High' ? 'orange' : r.priority === 'Medium' ? 'amber' : 'info')}`}>{r.priority}</span></td><td>{r.text}</td><td>{r.who}</td></tr>)}</tbody></table></div>
-      : <Empty>No actions needed this week.</Empty>}</Card>
+      : <Empty icon="check">No actions needed this week.</Empty>}</Card>
     {W.coverage && W.coverage.gaps.length > 0 && <Card title="Data coverage" aside={<span className="muted">{W.coverage.entered} of {W.coverage.expected} daily records</span>}>
       <div className="cov"><span style={{ width: `${Math.min(100, W.coverage.pct)}%` }} /></div>
       <div className="tblw"><table><thead><tr><th>Place</th><th>Not entered</th><th>Days</th></tr></thead>

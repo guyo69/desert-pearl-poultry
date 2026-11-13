@@ -26,12 +26,12 @@ export function ClerkHome({ D, version, go }: ViewProps) {
     <StorePending D={D} />
     <FeedCard D={D} />
     <div className="tiles">
-      <Tile icon="egg" label="Egg collection" color="--l-van" onClick={() => ui.openForm(collectForm(D))} />
-      <Tile icon="list" label="Daily house sheet" color="--l-rayan" onClick={() => ui.openForm(houseDayForm(D))} />
-      <Tile icon="drop" label="Water drunk" color="--info" onClick={() => ui.openForm(waterIntakeForm(D))} />
-      <Tile icon="tank" label="Tank level" color="--l-tuala" onClick={() => ui.openForm(tankForm(D))} />
-      <Tile icon="bird" label="Mortality" color="--muted" onClick={() => ui.openForm(mortForm(D))} />
-      <Tile icon="truck" label="Issue eggs" color="--l-farm" onClick={() => ui.openForm(dispatchForm(D, 'FARM'))} />
+      <Tile icon="egg" label="Egg collection" work="make" onClick={() => ui.openForm(collectForm(D))} />
+      <Tile icon="list" label="Daily house sheet" work="sheet" onClick={() => ui.openForm(houseDayForm(D))} />
+      <Tile icon="drop" label="Water drunk" work="check" onClick={() => ui.openForm(waterIntakeForm(D))} />
+      <Tile icon="tank" label="Tank level" work="check" onClick={() => ui.openForm(tankForm(D))} />
+      <Tile icon="bird" label="Deaths" work="loss" onClick={() => ui.openForm(mortForm(D))} />
+      <Tile icon="truck" label="Send eggs" work="out" onClick={() => ui.openForm(dispatchForm(D, 'FARM'))} />
     </div>
     <div className="grid2">
       <Card title="Today by house" aside={<span className="muted">{dlabel(D.today)}</span>}><div className="list">{D.houses.map((h, i) => {
@@ -135,11 +135,11 @@ export function Health({ D }: ViewProps) {
         return <div className="check" key={e.id}><button className={`tick ${e.done ? 'ok' : ''}`} style={{ border: 0, cursor: 'pointer' }} aria-label={e.done ? 'Mark not done' : 'Mark done'} disabled={!canEnter(D)} onClick={() => canEnter(D) && done(e.id, !e.done)}>{e.done && <Icon name="check" />}</button>
           <div style={{ flex: 1, minWidth: 0 }}><b style={{ display: 'block', fontSize: 14.5 }}>{e.task}</b><small className="muted">{e.house} · {dlabel(e.due)}{!e.done && (n < 0 ? ` · ${-n} days overdue` : n === 0 ? ' · today' : ` · in ${n} days`)}</small></div>
           {mgmt && <button className="act" style={{ background: 'none', border: 0, color: 'var(--muted)' }} onClick={() => ui.openForm(scheduleForm(D, e))}>Edit</button>}</div>; })}</div>
-        : <Empty>No vaccinations or treatments scheduled.</Empty>}</Card>
+        : <Empty icon="syringe">No vaccinations or treatments scheduled. The farm manager adds them so the due dates show here.</Empty>}</Card>
   </>;
 }
 
-const REC_KINDS: [string, string][] = [['all', 'All'], ['collect', 'Eggs'], ['feed', 'Feed'], ['water', 'Water'], ['med', 'Medicine'], ['confirm', 'From the store'], ['mort', 'Mortality'], ['xfer', 'Sent']];
+const REC_KINDS: [string, string][] = [['all', 'All'], ['collect', 'Eggs'], ['feed', 'Feed'], ['water', 'Water'], ['med', 'Medicine'], ['confirm', 'From the store'], ['mort', 'Deaths'], ['xfer', 'Sent']];
 export function Records({ D, version }: ViewProps) {
   const [k, setK] = useState('all');
   return <Card title="Farm records" aside={<Seg value={k} options={REC_KINDS} onChange={setK} />}>
@@ -166,7 +166,7 @@ export function MedicineStore({ D, mgmt }: { D: ViewProps['D']; mgmt: boolean })
           <div className="mid"><b>{m.name}</b>{m.active && <div className="splitbar" style={{ margin: '6px 0 2px', height: 6 }}><span style={{ width: `${lvl * 100}%`, background: `var(${low ? '--f-low' : '--f-full'})` }} /></div>}
             <small>{m.active ? `Reorder at ${n0(m.reorder)} ${m.unit}` : 'Not in use'}</small></div>
           <div className="end">{n0(m.stock)} {m.unit}{low && <small style={{ color: 'var(--f-low)' }}>Low</small>}{mgmt && <div><button className="act" onClick={() => ui.openForm(medicineForm(D, m))}>Edit</button></div>}</div></div>; })}</div>
-    </div>) : <Empty>No medicines yet. The inventory clerk adds each item when its first delivery arrives.</Empty>}
+    </div>) : <Empty icon="syringe">No medicines yet. The inventory clerk adds each item with Medicine received when its first delivery arrives.</Empty>}
     {mgmt && retired > 0 && <button className="lnk" style={{ marginTop: 8 }} onClick={() => setShowOld(!showOld)}>{showOld ? 'Hide items not in use' : `Show ${retired} item${retired === 1 ? '' : 's'} not in use`}</button>}
   </Card>;
 }

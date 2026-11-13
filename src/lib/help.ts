@@ -15,6 +15,7 @@ export interface Tip { id: string; tab: string; target: string; title: string; t
 
 export const TIPS: Record<Who, Tip[]> = {
   pos: [
+    { id: 'pos.next', tab: 'today', target: 'next', title: 'Start here', text: 'The big button is the one thing to do now.' },
     { id: 'pos.steps', tab: 'today', target: 'steps', title: 'Your day, in order', text: 'Work down this list. Each step turns green when it is done.' },
     { id: 'pos.open', tab: 'today', target: 'step:Opening count', title: 'Start with the opening count', text: 'Count the eggs on hand before the first sale.' },
     { id: 'pos.sale', tab: 'today', target: 'tile:Record sale', title: 'Record every sale', text: 'Cash, M-Pesa, Paybill or credit, as it happens.' },
@@ -22,22 +23,24 @@ export const TIPS: Record<Who, Tip[]> = {
     { id: 'pos.help', tab: '*', target: 'help', title: 'Help is here', text: 'Steps for each job and answers to common questions.' },
   ],
   van: [
+    { id: 'van.next', tab: 'today', target: 'next', title: 'Start here', text: 'The big button is the one thing to do now.' },
     { id: 'van.steps', tab: 'today', target: 'steps', title: 'Your day on the van', text: 'Work down this list. Each step turns green when it is done.' },
-    { id: 'van.load', tab: 'today', target: 'tile:Receive a load', title: 'Receive your load', text: 'Count what was loaded before you leave the farm.' },
+    { id: 'van.load', tab: 'today', target: 'tile:Eggs loaded', title: 'Count your load', text: 'Count what was loaded before you leave the farm.' },
     { id: 'van.deliver', tab: 'today', target: 'tile:Deliver eggs', title: 'Deliver at each stop', text: 'Record what you leave. The outlet confirms it.' },
     { id: 'van.sale', tab: 'today', target: 'tile:Record sale', title: 'Sales on the road', text: 'Record each sale as it happens.' },
     { id: 'van.help', tab: '*', target: 'help', title: 'Help is here', text: 'Steps for each job and answers to common questions.' },
   ],
   clerk: [
+    { id: 'clerk.next', tab: 'home', target: 'next', title: 'Start here', text: 'The big button is the one thing to do now.' },
     { id: 'clerk.steps', tab: 'home', target: 'steps', title: 'Your farm day, in order', text: 'Work down this list. Each step turns green when it is done.' },
     { id: 'clerk.tank', tab: 'home', target: 'tile:Tank level', title: 'First thing: the tank', text: 'Read the water tank before anything else.' },
-    { id: 'clerk.water', tab: 'home', target: 'tile:Water drunk', title: 'Water for each house', text: 'Record the litres each house drank.' },
     { id: 'clerk.eggs', tab: 'home', target: 'tile:Egg collection', title: 'Collect and grade', text: 'Normal, cracked, jumbo and damaged, house by house.' },
-    { id: 'clerk.send', tab: 'home', target: 'tile:Issue eggs', title: 'Send eggs out', text: 'To an outlet or the van. They confirm on arrival.' },
+    { id: 'clerk.send', tab: 'home', target: 'tile:Send eggs', title: 'Send eggs out', text: 'To an outlet or the van. They confirm on arrival.' },
     { id: 'clerk.flocks', tab: 'health', target: 'houses', title: 'New hens or a new house', text: 'Add them here. Earlier flocks keep their records.' },
     { id: 'clerk.help', tab: '*', target: 'help', title: 'Help is here', text: 'Steps for each job and answers to common questions.' },
   ],
   store: [
+    { id: 'store.next', tab: 'store', target: 'next', title: 'Start here', text: 'The big button is the one thing to do now.' },
     { id: 'store.in', tab: 'store', target: 'tile:Feed received', title: 'Deliveries first', text: 'Count the bags as they come off the lorry.' },
     { id: 'store.issue', tab: 'store', target: 'tile:Issue feed', title: 'Feed for a house', text: 'The production clerk confirms what arrived.' },
     { id: 'store.mill', tab: 'store', target: 'tile:Feed milled', title: 'After each mixing', text: 'Enter the tonnes. The recipe works out the rest.' },
@@ -70,14 +73,14 @@ export interface Task { title: string; steps: string[]; action?: string; keyword
 export const TASKS: Record<Who, Task[]> = {
   pos: [
     { title: 'Start the day', steps: ['Count the eggs on hand: normal, cracked and jumbo.', 'Save the opening count before the first sale.'], action: 'count_open', keywords: 'opening open morning' },
-    { title: 'Receive a delivery', steps: ['When eggs arrive, open the delivery.', 'Count what came, and any damaged on the way.', 'Save. The difference stays on record.'], action: 'receive', keywords: 'arrive delivery stock in' },
+    { title: 'Eggs arrived', steps: ['When eggs arrive, open the delivery.', 'Count what came, and any damaged on the way.', 'Save. The difference stays on record.'], action: 'receive', keywords: 'arrive delivery stock in' },
     { title: 'Record a sale', steps: ['Enter the trays and pieces sold.', 'Split the money: cash, Till, Paybill or credit.', 'Credit needs the customer\'s name.'], action: 'sale', keywords: 'sell customer money mpesa till paybill credit' },
     { title: 'Credit paid back', steps: ['Choose the customer.', 'Enter the amount and how they paid.', 'Their oldest credit sales are cleared first.'], action: 'credit_paid', keywords: 'debt owe pay back' },
     { title: 'Damaged eggs', steps: ['Enter the broken or spoilt eggs and why.'], action: 'damaged', keywords: 'broken spoilt breakage loss' },
     { title: 'Close the day', steps: ['Count the eggs left.', 'Count the cash in the drawer.', 'Bank the cash or move it to Paybill.'], action: 'count_close', keywords: 'closing evening end cash' },
   ],
   van: [
-    { title: 'Receive your load', steps: ['At the farm, open the load waiting for you.', 'Count what was loaded and any damaged.'], action: 'receive', keywords: 'load morning farm' },
+    { title: 'Count your load', steps: ['At the farm, open the load waiting for you.', 'Count what was loaded and any damaged.'], action: 'receive', keywords: 'load morning farm' },
     { title: 'Deliver eggs', steps: ['At each stop, choose the farm or the outlet.', 'Enter the eggs you leave. They confirm on arrival.'], action: 'dispatch', keywords: 'drop deliver outlet' },
     { title: 'Record a sale', steps: ['Enter what you sold and how you were paid.'], action: 'sale', keywords: 'sell customer money' },
     { title: 'End the day empty', steps: ['Drop what is left at the farm or the nearest outlet.', 'The van keeps no eggs overnight.'], action: 'leftover', keywords: 'left over empty evening' },

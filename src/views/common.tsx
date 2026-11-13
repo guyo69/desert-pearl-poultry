@@ -26,7 +26,7 @@ export function describe(D: Dashboard, r: ActivityRow): { title: string; sub: st
   const x = r.data, house = (id: string) => D.houses.find((h) => h.id === id)?.name ?? id;
   switch (r.kind) {
     case 'collect': return { title: `${house(x.house_id)} collection`, sub: `${mix(q(x))}${+x.dmg ? ` · ${x.dmg} damaged` : ''}`, end: eggs(t4(q(x)) + (+x.dmg || 0)) };
-    case 'mort': return { title: `Mortality · ${house(x.house_id)}`, sub: x.cause, end: `${x.birds} bird${x.birds > 1 ? 's' : ''}` };
+    case 'mort': return { title: `Deaths · ${house(x.house_id)}`, sub: x.cause, end: `${x.birds} bird${x.birds > 1 ? 's' : ''}` };
     case 'feed': return x.kind === 'in' ? { title: `Feed received${x.bags ? ` · ${x.bags} bags` : ''}`, sub: x.cost ? kes(x.cost) : '', end: `+${n0(x.kg)} kg` }
       : x.kind === 'use' ? { title: x.need_confirm ? `Feed issued to ${x.house}` : `Feed used · ${x.note ?? ''}`, sub: x.need_confirm ? `From the store · ${x.note ?? ''}` : x.house ?? '', end: `−${n0(x.kg)} kg` }
       : { title: 'Feed store adjusted', sub: x.note ?? '', end: `${x.kg > 0 ? '+' : ''}${n0(x.kg)} kg` };
@@ -36,7 +36,7 @@ export function describe(D: Dashboard, r: ActivityRow): { title: string; sub: st
     case 'xfer': return { title: `${locShort(D, x.from_loc)} → ${locShort(D, x.to_loc)}`,
       sub: x.status === 'received' ? `Received ${timeOf(x.received_at)}${t4(q(x, 'recv_')) < t4(q(x, 'sent_')) ? ` · ${eggs(t4(q(x, 'sent_')) - t4(q(x, 'recv_')))} short${+x.recv_dmg ? ` (${x.recv_dmg} damaged)` : ''}` : ''}` : `In transit · ${mix(q(x, 'sent_'))}`,
       end: eggs(t4(q(x, 'sent_'))) };
-    case 'issue': return { title: `${x.kind === 'out' ? 'Issued to' : 'Taken in from'} ${x.party ?? 'outside'}`, sub: `${locShort(D, x.location_id)} · ${mix(q(x))}${x.note ? ` · ${x.note}` : ''}`, end: `${x.kind === 'out' ? '−' : '+'}${eggs(t4(q(x)))}` };
+    case 'issue': return { title: `${x.kind === 'out' ? 'Given away to' : 'Taken in from'} ${x.party ?? 'outside'}`, sub: `${locShort(D, x.location_id)} · ${mix(q(x))}${x.note ? ` · ${x.note}` : ''}`, end: `${x.kind === 'out' ? '−' : '+'}${eggs(t4(q(x)))}` };
     case 'sale': return { title: `${x.imported ? 'Sales (paper book)' : 'Sale'} · ${eggs(t4(q(x)))}`, sub: `${locShort(D, x.location_id)} · ${[['cash', 'Cash'], ['till', 'Till'], ['paybill', 'Paybill'], ['credit', 'Credit']].filter(([k]) => +x[k]).map(([k, l]) => `${l} ${n0(+x[k])}`).join(' + ')}${x.customer ? ` · ${x.customer}` : ''}${x.list_value != null && +x.list_value !== +x.value ? ` · list ${n0(+x.list_value)}` : ''}`, end: kes(+x.value) };
     case 'brk': return { title: x.reason, sub: `${locShort(D, x.location_id)} · ${ITEM_NAME[x.item as 'N'] ?? x.item}`, end: `−${x.qty} pc` };
     case 'count': { const adj = t4(q(x, 'adj_')); return { title: `${x.kind === 'open' ? 'Opening count' : x.kind === 'close' ? 'Closing count' : 'Opening balance'} · ${locShort(D, x.location_id)}`, sub: adj ? `Variance ${eggs(adj)}` : 'Matched book stock', end: eggs(t4(q(x, 'cnt_'))) }; }
@@ -96,7 +96,7 @@ export function RecordList({ D, version, loc, kinds, canVoid, limit = 30 }: { D:
   if (err) return <Empty>{err}</Empty>;
   if (!rows) return <SkelList n={Math.min(limit, 5)} />;
   const shown = kinds && kinds.length > 1 ? rows.filter((r) => kinds.includes(r.kind)) : rows;
-  if (!shown.length) return <Empty>Nothing recorded yet.</Empty>;
+  if (!shown.length) return <Empty icon="list">Nothing recorded here yet. What you save shows up here straight away, newest first.</Empty>;
   const out: React.ReactNode[] = [];
   shown.forEach((r, i) => {
     if (i === 0 || shown[i - 1].d !== r.d) out.push(<div key={`d${r.d}`} className="day-head">{r.d === D.today ? 'Today' : dlabel(r.d)}</div>);
@@ -122,12 +122,12 @@ export function OutstandingCredits({ D, loc, limit = 6 }: { D: Dashboard; loc?: 
         <div className="end">{kes(Number(c.owed))}{can && <div><button className="act" onClick={() => ui.openForm(creditPaidForm(D, loc ?? null, c))}>Record payment</button></div>}</div>
       </div>; })}
       {list.length > limit && <button className="btn sm alt more-btn" style={{ marginTop: 10 }} onClick={() => setAll(!all)}>{all ? 'Show fewer' : `Show all ${list.length}`}</button>}
-    </div> : <Empty>No one owes anything{loc ? ' at this outlet' : ''}.</Empty>}
+    </div> : <Empty icon="wallet">No one owes anything{loc ? ' at this outlet' : ''}. A sale paid with Credit shows here with the customer's name until it is paid.</Empty>}
   </Card>;
 }
 
 export function NoticeList({ D }: { D: Dashboard }) {
-  if (!D.notifications.length) return <Empty>No notifications in the last 14 days.</Empty>;
+  if (!D.notifications.length) return <Empty icon="bell">No reminders in the last 14 days. Reminders come only when something is still to do.</Empty>;
   return <div className="alerts">{D.notifications.slice(0, 20).map((n) => (
     <div className="alert" key={n.id} style={n.read ? { opacity: 0.7 } : undefined}><span className="stripe" style={{ background: sevVar(n.sev) }} />
       <div style={{ minWidth: 0 }}><b>{n.title}</b><p>{n.body}{n.body ? ' · ' : ''}{dlabel(n.created_at.slice(0, 10))} {timeOf(n.created_at)}</p></div></div>))}</div>;

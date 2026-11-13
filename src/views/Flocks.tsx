@@ -29,7 +29,7 @@ export function HousesFlocks({ D }: { D: Dashboard }) {
             {!empty && <button className="lnk" onClick={() => ui.openForm(flockEditForm(D, h.id))}>Edit flock</button>}
             {!empty && <button className="lnk" onClick={() => ui.openForm(flockEndForm(D, h.id))}>Empty</button>}
             {mgmt && <button className="lnk" onClick={() => ui.openForm(houseForm(D, h))}>Rename</button>}</div>}</div></div>; })}</div>
-      : <Empty>No houses yet. Add the first house, then place its flock.</Empty>}
+      : <Empty icon="egg">No houses yet. Add the first house, then place its flock.</Empty>}
     {past.length > 0 && <>
       <button className="lnk" style={{ marginTop: 12 }} onClick={() => setOld(!old)}>{old ? 'Hide earlier flocks' : `Earlier flocks (${past.length})`}</button>
       {old && <div className="list" style={{ marginTop: 8 }}>{past.map((f) => <div className="li" key={f.id}>

@@ -22,6 +22,8 @@ const RAW = [
   { id: 1, name: 'Maize', per_tonne: 533, bag_kg: 90, active: true, sort: 1, stock: 5400 },
   { id: 2, name: 'Wheat bran', per_tonne: 180, bag_kg: 50, active: true, sort: 2, stock: 1273 },
   { id: 3, name: 'Soybean', per_tonne: 130, bag_kg: 50, active: true, sort: 3, stock: 900 },
+  { id: 4, name: 'Sunflower cake', per_tonne: 50, bag_kg: 50, active: true, sort: 4, stock: 400 },
+  { id: 5, name: 'Limestone (white)', per_tonne: 50, bag_kg: 50, active: true, sort: 5, stock: 300 },
 ];
 function load(name: string, role?: Role): [Dashboard, TabLite[]] {
   const D = JSON.parse(readFileSync(`tests/fixtures/${name}.json`, 'utf8')).dashboard as Dashboard;
@@ -76,6 +78,16 @@ describe('golden searches', () => {
     expect(top(store, 'feed left')).toEqual(['q:feed']);
     expect(top(store, 'mill', 2)).toContain('a:mill');
     expect(top(store, 'newcastle', 1)[0]).toMatch(/^m:/);
+  });
+  it('knows the names people use for medicines and raw materials', () => {
+    const first = (q: string) => search(store[0], store[1], q)[0]?.title ?? '';
+    expect(first('kideri')).toMatch(/Newcastle/);          // Kiswahili for Newcastle disease
+    expect(first('minyoo')).toMatch(/Dewormer/);           // worms
+    expect(first('worms')).toMatch(/Dewormer/);
+    expect(first('vitamini')).toMatch(/Multivitamin/);
+    expect(first('antibiotic')).toMatch(/Oxytetracycline/);
+    expect(first('alizeti')).toMatch(/Sunflower/);
+    expect(first('chokaa')).toMatch(/Limestone/);
   });
   it('outlet attendant', () => {
     expect(top(shop, 'sael')).toEqual(['a:sale']);                 // a typo

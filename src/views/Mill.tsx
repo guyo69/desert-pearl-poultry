@@ -55,7 +55,7 @@ export function RecipeCard({ D }: { D: Dashboard }) {
       <thead><tr><th>Raw material</th><th>kg a tonne</th><th>Share</th><th>For a {t1(m.batch)} t batch</th></tr></thead>
       <tbody>{list.map((x) => <tr key={x.id}><td>{x.name}</td><td>{n0(x.per_tonne)}</td><td>{pct(x.per_tonne / 1000, 1)}</td><td>{n0(x.per_tonne * m.batch)} kg</td></tr>)}
         <tr><td><b>Total</b></td><td><b>{n0(m.recipeKg)}</b></td><td><b>{pct(m.recipeKg / 1000, 0)}</b></td><td><b>{n0(m.recipeKg * m.batch)} kg</b></td></tr></tbody></table></div>
-      : <Empty>No recipe yet.</Empty>}
+      : <Empty icon="scoop">No recipe yet. The farm manager sets it with Change the recipe: kg of each raw material in one tonne.</Empty>}
     <p className="muted" style={{ fontSize: 13, margin: '10px 0 0' }}>Every milling takes each raw material out of the store by this recipe and puts the feed into the feed store in bags of {n0(D.settings.bag_kg)} kg. A change applies to the next milling; earlier millings keep the recipe they used.</p>
   </Card>;
 }

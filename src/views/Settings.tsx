@@ -144,7 +144,7 @@ function SecurityLog() {
         <span className="av" style={{ background: r.ok ? 'var(--f-full)' : 'var(--f-none)' }}><Icon name={r.ok ? 'check' : 'x'} /></span>
         <div className="mid"><b>{KIND[r.kind] ?? r.kind}{r.display_name ? ` · ${r.display_name}` : r.username ? ` · ${r.username}` : ''}</b>
           <small className={r.ok ? '' : 'sec-bad'}>{reasonText(r.reason)}</small><small className="ua">{r.ip} · {(r.user_agent ?? '').slice(0, 70)}</small></div>
-        <div className="end"><small>{when(r.at)}</small></div></div>)}</div> : <Empty>Nothing to show.</Empty>}</>}
+        <div className="end"><small>{when(r.at)}</small></div></div>)}</div> : <Empty icon="shield">No sign-ins match this choice. Choose All to see every sign-in.</Empty>}</>}
   </Card>;
 }
 

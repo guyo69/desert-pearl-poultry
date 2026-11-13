@@ -129,6 +129,15 @@ Before you push, run `npm test` and `npm run build`. If you touch SQL, also run 
 - **No connection** (or the gateway not answering, or signed out meanwhile): the entry is kept on the phone in IndexedDB (`dpv-offline`), the form shows "Saved on this phone", and the bar under the top bar says how many wait. They are sent from the page on reconnect, on return to the screen and every 20 seconds (no Background Sync, it is not on iPhones), oldest first, only by the person who made them. One the server refuses is marked with the reason for the person to try again or remove. One made on an earlier Nairobi day is held: sending it records it for today, so the person chooses, or shows it to the farm manager.
 - **Figures offline:** the last dashboard is kept on the phone for field staff (at most 36 hours) so the app opens with no connection, saying when the figures are from. Sign-out removes it; entries still waiting stay for the same person's next sign-in. The owner and farm manager keep figures in memory only, as before.
 
+## Simpler to find your way (13 Nov 2026)
+
+- **Do this next:** each field role's home (outlet, van, production clerk, inventory clerk) opens with one big button for the first step not yet done (`NextUp` in `src/views/Journey.tsx`), or "All done for now" with anything optional still open. The inventory clerk now has steps too (`StoreSteps`).
+- **Plain words on screen:** Issue eggs is now **Send eggs**, Out, no sale is **Eggs given away**, Receive is **Eggs arrived** (the van: **Eggs loaded**), Mortality is **Deaths**. The rules above keep their old names; the database and record kinds are unchanged.
+- **One colour per kind of work** (`src/ui/work.ts`), on tiles and the Do this next button: blue coming in, teal going out, green selling and money in, indigo counting and readings, red losses, pink money out, orange producing, grey whole-day sheets. `Tile` takes `work` instead of a colour.
+- **Bottom bar:** at most four tabs, then More, which opens the menu with every screen. The side rail on a computer is unchanged.
+- **Empty screens say what to do** (`Empty` takes an icon and an optional button).
+- **Search knows local names:** diseases and local words for medicines, feed, supplies and raw materials (kideri, minyoo, vitamini, alizeti, chokaa and others in `SYNONYMS`), with golden tests.
+
 ## Open items
 
 - **Tank size:** `settings.tank_capacity_l` is 1,000 L while the farm sheet showed about 3,500 L drunk per house a day. Confirm the real tank size, then record a fresh tank reading.

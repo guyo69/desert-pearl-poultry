@@ -11,6 +11,7 @@ import { Card, Empty, FeedCard, Seg, Tile } from '../ui/widgets';
 import { RecordList } from './common';
 import { MedicineStore, StorePending } from './Farm';
 import { MillCard } from './Mill';
+import { StoreSteps } from './Journey';
 import type { ViewProps } from './Management';
 
 export function StoreHome({ D, version, go }: ViewProps) {
@@ -18,15 +19,16 @@ export function StoreHome({ D, version, go }: ViewProps) {
   const lowMeds = D.medicines.filter((m) => m.active && m.stock <= m.reorder);
   const lowSup = (D.supplies ?? []).filter((x) => x.active && x.stock <= x.reorder);
   return <>
+    <StoreSteps D={D} />
     <div className="tiles">
-      <Tile icon="scoop" label="Issue feed" color="--f-low" onClick={() => ui.openForm(storeFeedIssueForm(D))} />
-      {(D.raw ?? []).length > 0 && <Tile icon="pulse" label="Feed milled" color="--f-full" onClick={() => ui.openForm(millForm(D))} />}
-      {(D.raw ?? []).length > 0 && <Tile icon="truck" label="Raw material received" color="--l-lucky" onClick={() => ui.openForm(rawInForm(D))} />}
-      <Tile icon="sack" label="Feed received" color="--l-lucky" onClick={() => ui.openForm(storeFeedInForm(D))} />
-      <Tile icon="syringe" label="Issue medicine" color="--l-rayan" onClick={() => ui.openForm(storeMedIssueForm(D))} />
-      <Tile icon="inbox" label="Medicine received" color="--info" onClick={() => ui.openForm(storeMedInForm(D))} />
-      <Tile icon="box" label="Issue supplies" color="--l-tuala" onClick={() => ui.openForm(supplyOutForm(D))} />
-      <Tile icon="truck" label="Supplies received" color="--l-farm" onClick={() => ui.openForm(supplyInForm(D))} />
+      <Tile icon="sack" label="Issue feed" work="out" onClick={() => ui.openForm(storeFeedIssueForm(D))} />
+      {(D.raw ?? []).length > 0 && <Tile icon="scoop" label="Feed milled" work="make" onClick={() => ui.openForm(millForm(D))} />}
+      {(D.raw ?? []).length > 0 && <Tile icon="inbox" label="Raw material received" work="in" onClick={() => ui.openForm(rawInForm(D))} />}
+      <Tile icon="inbox" label="Feed received" work="in" onClick={() => ui.openForm(storeFeedInForm(D))} />
+      <Tile icon="syringe" label="Issue medicine" work="out" onClick={() => ui.openForm(storeMedIssueForm(D))} />
+      <Tile icon="inbox" label="Medicine received" work="in" onClick={() => ui.openForm(storeMedInForm(D))} />
+      <Tile icon="box" label="Issue supplies" work="out" onClick={() => ui.openForm(supplyOutForm(D))} />
+      <Tile icon="inbox" label="Supplies received" work="in" onClick={() => ui.openForm(supplyInForm(D))} />
     </div>
     <StorePending D={D} />
     <MillCard D={D} compact go={go} />
@@ -60,7 +62,7 @@ export function Supplies({ D }: { D: Dashboard }) {
           <div className="mid"><b>{x.name}</b><small>{x.active ? `Reorder at ${n0(x.reorder)} ${x.unit}` : 'Not in use'}</small></div>
           <div className="end">{n0(x.stock)} {x.unit}{low && <small style={{ color: 'var(--f-low)' }}>Low</small>}
             {canEdit && <div><button className="act" onClick={() => ui.openForm(supplyForm(D, x))}>Edit</button></div>}</div></div>; })}</div></div>)
-      : <Empty>No supplies yet. Use Received when the first delivery of trays, packaging or cleaning items arrives.</Empty>}
+      : <Empty icon="box">No supplies yet. Use Supplies received when the first delivery of trays, packaging or cleaning items arrives.</Empty>}
     {retired > 0 && <button className="lnk" style={{ marginTop: 8 }} onClick={() => setOld(!old)}>{old ? 'Hide items not in use' : `Show ${retired} not in use`}</button>}
   </Card>;
 }
