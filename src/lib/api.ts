@@ -65,6 +65,9 @@ async function sendOrKeep<T>(fn: string, args: Record<string, unknown>, user: st
   throw new QueuedError(e);
 }
 
+/** A call straight to the gateway, never kept for later (problem notes). */
+export const rpcPlain = <T = unknown>(fn: string, args: Record<string, unknown> = {}) => call<T>(`rpc/${fn}`, args);
+
 export const rpc = <T = unknown>(fn: string, args: Record<string, unknown> = {}): Promise<T> =>
   (outboxUser && QUEUEABLE.has(fn) ? sendOrKeep<T>(fn, args, outboxUser) : call<T>(`rpc/${fn}`, args));
 

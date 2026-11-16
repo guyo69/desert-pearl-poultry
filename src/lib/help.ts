@@ -2,7 +2,7 @@
 // how-to steps and the questions for each role, and the search over all of it.
 // The tips, the Help panel, Search and the user guide read from here, so they
 // stay in step. Plain words: one short line per tip, in the order people work.
-import type { Role } from './types';
+import type { Dashboard, Role } from './types';
 
 /** Who a piece of help is for. 'van' is the sales point role on the mobile van. */
 export type Who = Role | 'van';
@@ -203,3 +203,5 @@ export function score(q: string[], title: string, body = ''): number {
 }
 
 export const whoOf = (role: Role, isVan: boolean): Who => (role === 'pos' && isVan ? 'van' : role);
+/** Who a signed-in person is for help and search: the van driver is a sales point on the van. */
+export const whoFor = (D: Dashboard): Who => whoOf(D.me.role, D.me.role === 'pos' && !!D.me.location_id && D.locations.find((l) => l.id === D.me.location_id)?.kind === 'van');

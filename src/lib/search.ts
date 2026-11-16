@@ -5,8 +5,8 @@
 // to do as data (`Go`), and ui/Help.tsx carries it out. tests/search.test.ts
 // holds the golden queries that must keep working.
 import { addDays, dlabel, eggs, kes, n0, pct } from './format';
-import { whoOf, FAQS, TASKS, type Who } from './help';
-import { balance, canEnter, cashAcc, feedInfo, houseAge, isVan, layRate, millInfo, produced, deaths, salesOn, stockNow, tankInfo, tot, totalFunds } from './metrics';
+import { whoFor, FAQS, TASKS, type Who } from './help';
+import { balance, canEnter, cashAcc, feedInfo, houseAge, layRate, millInfo, produced, deaths, salesOn, stockNow, tankInfo, tot, totalFunds } from './metrics';
 import type { Dashboard } from './types';
 
 // ---------------------------------------------------------------------------- what search can open
@@ -46,7 +46,7 @@ export const ACTION_META: ActionMeta[] = [
   { id: 'house_new', label: 'Add a house', keywords: 'house expansion new building', who: ['owner', 'manager', 'clerk'] },
   { id: 'staff', label: 'Add a member of staff', keywords: 'staff user account employee new', who: ['owner', 'manager'] },
 ];
-export const whoFor = (D: Dashboard): Who => whoOf(D.me.role, D.me.role === 'pos' && !!D.me.location_id && isVan(D, D.me.location_id));
+export { whoFor };
 export const actionsFor = (D: Dashboard, who: Who) => ACTION_META.filter((a) => a.who.includes(who) && (!a.enter || canEnter(D)));
 
 /**
@@ -61,6 +61,7 @@ export const SECTIONS: Section[] = [
   { seg: 'Farm setup', title: 'Prices & thresholds', tabs: ['settings'], keywords: 'price prices tray cost thresholds settings tank size feed buffer', who: ['owner', 'manager'] },
   { seg: 'Farm setup', title: 'Opening balances', tabs: ['settings'], keywords: 'opening balances go live start', who: ['owner'] },
   { seg: 'Sign-in security', title: 'Sign-in security log', tabs: ['settings'], keywords: 'security log sign in login attempts', who: ['owner'] },
+  { seg: 'Farm setup', title: 'App problems', tabs: ['settings'], keywords: 'problems errors slow app bugs crash not working support', who: ['owner', 'manager'] },
   { title: 'My account', tabs: ['settings', 'me'], keywords: 'account password change two-step recovery email sign out' },
   { title: 'Houses and flocks', tabs: ['health', 'settings'], keywords: 'houses flocks hens breed age placement', who: ['owner', 'manager', 'clerk'] },
   { title: 'Flock health', tabs: ['health'], keywords: 'health deaths mortality lay rate hens', who: ['owner', 'manager', 'clerk'] },

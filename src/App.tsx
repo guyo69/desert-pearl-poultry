@@ -1,23 +1,46 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { AUTH_EVENT, RELOAD_EVENT, authStatus, dataVersion, flushOutbox, forgetLegacyStorage, loadDashboard, rpc, setOutboxUser, signOut as endSession, type AuthStatus, type AuthUser } from './lib/api';
 import { forgetFigures, readFigures, saveFigures } from './lib/outbox';
 import { OfflineBar } from './ui/Offline';
 import { alertsFor } from './lib/metrics';
 import type { Dashboard, Role } from './lib/types';
-import { collectForm, saleForm } from './forms/forms';
 import { Icon } from './ui/icons';
 import { UIProvider, useUI } from './ui/ui';
-import { AlertList, AppSkeleton } from './ui/widgets';
+import { AlertList, AppSkeleton, Card, SkelList } from './ui/widgets';
 import { ScreenGuard } from './ui/ScreenGuard';
-import { Login, MfaEnroll, MfaVerify, NewPassword, RecoveryEmail } from './views/Auth';
-import { Alerts, Money, Overview, Report, Stock, type ViewProps } from './views/Management';
-import { ClerkHome, Feed, Health, Records, Water } from './views/Farm';
-import { PosMoney, PosSales, PosStock, PosToday } from './views/SalesPoint';
-import { StoreHome, StoreItems, StoreRecords } from './views/Store';
-import { Mill } from './views/Mill';
-import { Account, Activity, Setup } from './views/Settings';
-import { NoticeList } from './views/common';
+import type { ViewProps } from './views/Management';
 import { TipHost, openHelp, openSearch } from './ui/Help';
+import { note, setScreen, SLOW, startTelemetry } from './lib/telemetry';
+
+// Each screen is loaded when it is first opened, so a phone only downloads the
+// screens its person uses (16 Nov 2026). The service worker keeps them all for offline use.
+type AnyView = ComponentType<any>;
+// after a new version goes live an old page may ask for a screen file that is gone: reload once to pick up the new version
+const fresh = <T,>(p: Promise<T>) => p.catch((e) => {
+  const gone = /dynamically imported module|Importing a module script failed|Failed to fetch|error loading/i.test(String(e?.message ?? e));
+  if (gone && navigator.onLine) {
+    let again = true; try { again = sessionStorage.getItem('dpv-reloaded') === '1'; sessionStorage.setItem('dpv-reloaded', '1'); } catch { /* storage blocked */ }
+    if (!again) location.reload();
+  }
+  throw e;
+});
+const view = <K extends string>(load: () => Promise<Record<K, AnyView>>, name: K) => lazy(() => fresh(load()).then((m) => ({ default: m[name] })));
+/** The screens a role starts on, fetched while its figures load. */
+const FIRST: Record<Role, () => Promise<unknown>> = {
+  owner: () => import('./views/Management'), manager: () => import('./views/Management'), clerk: () => import('./views/Farm'),
+  store: () => import('./views/Store'), pos: () => import('./views/SalesPoint'),
+};
+const management = () => import('./views/Management'), farm = () => import('./views/Farm'), shop = () => import('./views/SalesPoint');
+const store = () => import('./views/Store'), settings = () => import('./views/Settings'), auth = () => import('./views/Auth');
+const Overview = view(management, 'Overview'), Alerts = view(management, 'Alerts'), Stock = view(management, 'Stock'), Money = view(management, 'Money'), Report = view(management, 'Report');
+const ClerkHome = view(farm, 'ClerkHome'), Feed = view(farm, 'Feed'), Health = view(farm, 'Health'), Records = view(farm, 'Records'), Water = view(farm, 'Water');
+const PosToday = view(shop, 'PosToday'), PosStock = view(shop, 'PosStock'), PosSales = view(shop, 'PosSales'), PosMoney = view(shop, 'PosMoney');
+const StoreHome = view(store, 'StoreHome'), StoreItems = view(store, 'StoreItems'), StoreRecords = view(store, 'StoreRecords');
+const Mill = view(() => import('./views/Mill'), 'Mill');
+const Account = view(settings, 'Account'), Activity = view(settings, 'Activity'), Setup = view(settings, 'Setup');
+const Login = view(auth, 'Login'), MfaEnroll = view(auth, 'MfaEnroll'), MfaVerify = view(auth, 'MfaVerify'), NewPassword = view(auth, 'NewPassword');
+/** While a screen's code arrives (a moment on a slow connection, once). */
+const ScreenLoading = () => <Card><SkelList n={4} /></Card>;
 
 type Tab = { label: string; icon: string; view: (p: ViewProps & { signOut: (everywhere?: boolean) => void }) => ReactNode };
 const TABS: Record<string, Tab> = {
@@ -104,10 +127,14 @@ export default function App() {
     <button className="btn" onClick={check}>Try again</button></div> : <div className="boot-mark" aria-label="Loading"><span /><span /><span /></div>}</div>;
   const u = st.user;
   if (st.state === 'ready' && u) return <Signed key={u.id} user={u} signOut={out} />;
+  return <Suspense fallback={<div className="center"><div className="boot-mark" aria-label="Loading"><span /><span /><span /></div></div>}>{signIn(st, u, notice, setNotice, check, out)}</Suspense>;
+}
+
+function signIn(st: AuthStatus, u: AuthUser | undefined, notice: string, setNotice: (s: string) => void, check: () => void, out: (everywhere?: boolean) => void) {
   if (st.state === 'set_password' && u) return <NewPassword forced user={u} onDone={check} onSignOut={() => out()} />;
   if (st.state === 'mfa_enroll' && u) return <MfaEnroll user={u} onDone={check} onSignOut={() => out()} />;
   if (st.state === 'mfa_verify' && u) return <MfaVerify user={u} onSignOut={() => out()}
-    onDone={(r) => { if (r.used_backup) setNotice(`You used a backup code. ${r.backup_codes_left ?? 0} left. Make new ones under My account.`); check(); }} />;
+    onDone={(r: { used_backup?: boolean; backup_codes_left?: number }) => { if (r.used_backup) setNotice(`You used a backup code. ${r.backup_codes_left ?? 0} left. Make new ones under My account.`); check(); }} />;
   return <Login setupNeeded={st.setup_needed} notice={notice || (st.state === 'temp_expired' ? 'Your temporary password expired. Ask the owner to reset it.' : '')} onDone={() => { setNotice(''); check(); }} />;
 }
 
@@ -131,8 +158,11 @@ function Signed({ user, signOut }: { user: AuthUser; signOut: (everywhere?: bool
   const reload = useCallback(async () => {
     if (busy.current) return;
     busy.current = true;
+    const t0 = performance.now();
     try {
       const d = await loadDashboard(90);
+      const took = performance.now() - t0;
+      if (took > SLOW.figuresMs) note({ kind: 'slow', message: 'Figures slow to load', metric: Math.round(took) });
       seen.current = { v: Number(d.version ?? -1), day: d.today, at: Date.now() };
       setD(d); setErr(''); setStale(null); setVersion((v) => v + 1);
       if (field) saveFigures(user.id, user, d);
@@ -144,6 +174,14 @@ function Signed({ user, signOut }: { user: AuthUser; signOut: (everywhere?: bool
       }
     } finally { busy.current = false; }
   }, [field, user]);
+
+  // the first screen's code comes down while the figures load; problem notes start once signed in;
+  // field staff get the forms ahead of their first tap
+  useEffect(() => {
+    FIRST[user.role as Role]?.().catch(() => {});
+    if (field) (window.requestIdleCallback ?? ((f: () => void) => setTimeout(f, 2000)))(() => { import('./forms/forms').catch(() => {}); });
+    return startTelemetry();
+  }, [field, user.role]);
 
   // everyday entries go through the outbox, and whatever waits is sent as soon as possible
   useEffect(() => {
@@ -191,6 +229,7 @@ function Shell({ D, version, err, signOut, reload, stale, user }: { D: Dashboard
   const [drawer, setDrawer] = useState(false);
   const go = (t: string) => { setTab(t); setDrawer(false); try { history.replaceState(null, '', `#${t}`); } catch { /* ignore */ } window.scrollTo(0, 0); };
   useEffect(() => { if (!tabs.includes(tab)) setTab(tabs[0]); }, [tabs, tab]);
+  useEffect(() => { setScreen(tab); }, [tab]);
   // field roles get larger touch targets (styles.css, html[data-field])
   useEffect(() => {
     const el = document.documentElement, field = D.me.role !== 'owner' && D.me.role !== 'manager';
@@ -208,9 +247,9 @@ function Shell({ D, version, err, signOut, reload, stale, user }: { D: Dashboard
       const r = s.user?.recovery;
       if (!r || r.email || !r.mail_ready) return;
       const skip = () => { try { sessionStorage.setItem('dpv-recovery-later', '1'); } catch { /* ignore */ } ui.close(); };
-      ui.openPanel('Add a recovery email', <>
+      import('./views/Auth').then(({ RecoveryEmail }) => ui.openPanel('Add a recovery email', <>
         <RecoveryEmail onDone={(m) => { ui.close(); ui.toast(`Recovery email confirmed: ${m}.`); }} />
-        <button className="lnk center-t blockc" style={{ marginTop: 12 }} onClick={skip}>Later</button></>);
+        <button className="lnk center-t blockc" style={{ marginTop: 12 }} onClick={skip}>Later</button></>)).catch(() => {});
     }).catch(() => {});
     // once per sign-in
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -219,15 +258,17 @@ function Shell({ D, version, err, signOut, reload, stale, user }: { D: Dashboard
   const myAlerts = alertsFor(D);
   const unread = D.notifications.filter((n) => !n.read);
   const openBell = () => {
+    const NoticeList = lazy(() => import('./views/common').then((m) => ({ default: m.NoticeList })));
     ui.openPanel('Alerts & notifications', <>
       <div><h3 style={{ marginBottom: 8 }}>Live alerts</h3><AlertList list={myAlerts} /></div>
-      <div><h3 style={{ margin: '6px 0 8px' }}>Notifications</h3><NoticeList D={D} /></div>
+      <div><h3 style={{ margin: '6px 0 8px' }}>Notifications</h3><Suspense fallback={<SkelList n={2} />}><NoticeList D={D} /></Suspense></div>
       <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>Live alerts clear on their own once fixed. Turn on phone notifications under My account to get them when the app is closed.</p></>);
     if (unread.length) rpc('rpc_mark_read', { p_ids: unread.map((n) => n.id) }).then(reload).catch(() => {});
   };
   const loc = D.locations.find((l) => l.id === D.me.location_id);
-  const fab = D.me.role === 'clerk' ? { icon: 'egg', label: 'Collection', f: () => ui.openForm(collectForm(D)) }
-    : D.me.role === 'pos' ? { icon: 'plus', label: 'Sale', f: () => ui.openForm(saleForm(D, D.me.location_id!)) } : null;
+  const forms = () => import('./forms/forms');
+  const fab = D.me.role === 'clerk' ? { icon: 'egg', label: 'Collection', f: () => forms().then((m) => ui.openForm(m.collectForm(D))) }
+    : D.me.role === 'pos' ? { icon: 'plus', label: 'Sale', f: () => forms().then((m) => ui.openForm(m.saleForm(D, D.me.location_id!))) } : null;
   const title = TABS[tab].label === 'Home' || TABS[tab].label === 'Today' ? loc?.name ?? 'Desert Pearl' : TABS[tab].label;
   const props = { D, version, go, signOut };
   const tabInfo = [...tabs, ...(tabs.includes('me') || tabs.includes('settings') ? [] : ['me'])].map((k) => ({ key: k, label: TABS[k].label, icon: TABS[k].icon }));
@@ -255,7 +296,7 @@ function Shell({ D, version, err, signOut, reload, stale, user }: { D: Dashboard
       <main key={tab}>
         {D.me.backup_codes_left !== undefined && D.me.mfa_enabled && D.me.backup_codes_left <= 2 && tab !== 'me' && <div className="banner warn"><div><b>{D.me.backup_codes_left} backup code{D.me.backup_codes_left === 1 ? '' : 's'} left</b><p>Make a new set so you can still sign in if your phone is lost.</p></div><button className="btn sm" onClick={() => go('me')}>My account</button></div>}
         {err && online && stale == null && <div className="banner warn"><div><b>Could not refresh</b><p>{err}</p></div><button className="btn sm" onClick={reload}>Try again</button></div>}
-        <ScreenGuard name={tabs.includes(tab) || tab === 'me' ? tab : tabs[0]}>{(tabs.includes(tab) || tab === 'me' ? TABS[tab] : TABS[tabs[0]]).view(props)}</ScreenGuard>
+        <ScreenGuard name={tabs.includes(tab) || tab === 'me' ? tab : tabs[0]}><Suspense fallback={<ScreenLoading />}>{(tabs.includes(tab) || tab === 'me' ? TABS[tab] : TABS[tabs[0]]).view(props)}</Suspense></ScreenGuard>
       </main>
     </div>
     {/* at most four tabs on the phone's bar, then More for the rest (all of them are in the menu) */}

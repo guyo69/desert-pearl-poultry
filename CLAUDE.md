@@ -138,6 +138,12 @@ Before you push, run `npm test` and `npm run build`. If you touch SQL, also run 
 - **Empty screens say what to do** (`Empty` takes an icon and an optional button).
 - **Search knows local names:** diseases and local words for medicines, feed, supplies and raw materials (kideri, minyoo, vitamini, alizeti, chokaa and others in `SYNONYMS`), with golden tests.
 
+## Speed and problem notes (16 Nov 2026)
+
+- **Screens load when first opened** (`React.lazy` in `src/App.tsx`): the start-up file went from 145 KB to 76 KB (compressed), and each role downloads only its own screens. The first screen's code is fetched while the figures load (`FIRST`), field staff get the forms in the background, and the Help panel and Search load when first opened (`ui/HelpPanels.tsx`). After a new version goes live, an old page that asks for a screen file that is gone reloads once. On a mid-range phone profile (4x slower processor, 1.6 Mbps, 150 ms) the first screen showed in about 1.25 s instead of 1.6 s; taps answered in under 70 ms.
+- **Problem notes** (`src/lib/telemetry.ts`, `client_errors`, `rpc_log_client`): an error, a screen that could not open, a first screen slower than 4 s, a tap slower than 0.5 s, or figures slower than 8 s to load send a short note with the screen, the message, the time measured, the app version (`__APP_VERSION__`, the commit) and the kind of device. Never form values or figures: emails and long numbers are blanked on the phone and again in the database. At most one note of each kind per visit and 30 per person an hour.
+- **App problems card** (Settings, owner and farm manager; `rpc_client_errors(days)`): the last 14 days grouped by problem, with how often, how many people and which roles, devices, the slowest time and the details to pass to Sage Design Lab.
+
 ## Open items
 
 - **Tank size:** `settings.tank_capacity_l` is 1,000 L while the farm sheet showed about 3,500 L drunk per house a day. Confirm the real tank size, then record a fresh tank reading.

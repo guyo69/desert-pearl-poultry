@@ -32,6 +32,8 @@ function devGateway(): Plugin {
 }
 
 export default defineConfig({
+  // the app version shown with problem notes (the commit Vercel builds)
+  define: { __APP_VERSION__: JSON.stringify((process.env.VERCEL_GIT_COMMIT_SHA ?? 'local').slice(0, 7)) },
   plugins: [
     react(),
     devGateway(),

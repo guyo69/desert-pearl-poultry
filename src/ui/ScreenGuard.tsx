@@ -3,6 +3,7 @@
 // sees what went wrong and can switch screens or reload, and the message can
 // be read out or photographed for support.
 import { Component, type ReactNode } from 'react';
+import { note } from '../lib/telemetry';
 
 interface Props { name: string; children: ReactNode }
 interface State { error: Error | null }
@@ -10,7 +11,10 @@ interface State { error: Error | null }
 export class ScreenGuard extends Component<Props, State> {
   state: State = { error: null };
   static getDerivedStateFromError(error: Error): State { return { error }; }
-  componentDidCatch(error: Error) { console.error(`Screen "${this.props.name}" failed`, error); }
+  componentDidCatch(error: Error) {
+    console.error(`Screen "${this.props.name}" failed`, error);
+    note({ kind: 'error', screen: this.props.name, message: `Screen could not open: ${error.name}: ${error.message}`, detail: error.stack });
+  }
   componentDidUpdate(prev: Props) { if (prev.name !== this.props.name && this.state.error) this.setState({ error: null }); }
   render() {
     const e = this.state.error;

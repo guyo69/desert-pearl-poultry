@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { auth, authStatus, requestReload, rpc, securityLog, staffAdmin, type AuthUser, type SecurityEvent } from '../lib/api';
 import { dlabel, dnum, timeOf } from '../lib/format';
+import { nairobiDay } from '../lib/outbox';
 import { disablePush, enablePush, pushStatus } from '../lib/push';
 import type { Settings as S, StaffAdminRow, StaffLite } from '../lib/types';
 import { openingForm, staffForm } from '../forms/forms';
@@ -178,6 +179,31 @@ export function Activity({ D, version }: ViewProps) {
 }
 
 /** Settings: houses and flocks, staff, prices and thresholds, workbooks, opening balances, the security log and your account. */
+const SCREEN: Record<string, string> = { ov: 'Overview', alerts: 'Alerts', stock: 'Stock', money: 'Money', report: 'Report', activity: 'Activity', settings: 'Settings',
+  home: 'Home', feed: 'Feed', mill: 'Feed mill', water: 'Water', health: 'Flock health', records: 'Records', store: 'Store', meds: 'Store items', srecords: 'Store records',
+  today: 'Today', pstock: 'Stock', psales: 'Sales', pmoney: 'Money', me: 'My account' };
+const ROLE_SHORT: Record<string, string> = { owner: 'owner', manager: 'farm manager', clerk: 'production clerk', store: 'inventory clerk', pos: 'outlet or van' };
+interface Problem { kind: 'error' | 'slow'; screen: string | null; message: string; times: number; people: number; roles: string[]; first_at: string; last_at: string; slowest: number | null; devices: string[]; app: string | null; detail: string | null }
+
+/** Problems people's phones reported in the last 14 days (rpc_client_errors): errors and slow screens, newest first. */
+function AppProblems() {
+  const [list, setList] = useState<Problem[] | null>(null), [open, setOpen] = useState<number | null>(null);
+  useEffect(() => { rpc<Problem[]>('rpc_client_errors', { p_days: 14 }).then(setList).catch(() => setList([])); }, []);
+  const errors = (list ?? []).filter((x) => x.kind === 'error').reduce((n, x) => n + Number(x.times), 0);
+  return <Card title="App problems" aside={<span className="muted">last 14 days</span>}>
+    <p className="muted" style={{ margin: '0 0 10px', fontSize: 13.5 }}>Phones send a short note when a screen fails or is slow: what went wrong and where, never the figures entered. Share a problem with Sage Design Lab if it keeps coming back.</p>
+    {list === null ? <SkelList n={2} /> : !list.length ? <Empty icon="check">No problems reported in the last 14 days.</Empty>
+      : <><p style={{ margin: '0 0 6px', fontSize: 14 }}><b>{errors} error{errors === 1 ? '' : 's'}</b> and <b>{list.filter((x) => x.kind === 'slow').length} slow spot{list.filter((x) => x.kind === 'slow').length === 1 ? '' : 's'}</b></p>
+        <div className="list">{list.map((x, i) => <div className="li" key={i}>
+          <span className="av" style={{ background: `var(${x.kind === 'error' ? '--f-none' : '--f-low'})` }}><Icon name={x.kind === 'error' ? 'alert' : 'clock'} /></span>
+          <div className="mid"><b>{x.message}</b>
+            <small>{x.screen ? `${SCREEN[x.screen] ?? x.screen} · ` : ''}{x.times} time{Number(x.times) === 1 ? '' : 's'}, {x.people} {Number(x.people) === 1 ? 'person' : 'people'} ({x.roles.map((r) => ROLE_SHORT[r] ?? r).join(', ')}) · {x.devices.join(', ')}{x.slowest ? ` · slowest ${(Number(x.slowest) / 1000).toFixed(1)} s` : ''}</small>
+            {open === i && x.detail && <pre className="prob-detail">{x.detail}</pre>}
+            {x.detail && <div><button className="act" onClick={() => setOpen(open === i ? null : i)}>{open === i ? 'Hide details' : 'Details'}</button></div>}</div>
+          <div className="end"><small>{dlabel(nairobiDay(x.last_at))}<br />{timeOf(x.last_at)}{x.app ? ` · v${x.app}` : ''}</small></div></div>)}</div></>}
+  </Card>;
+}
+
 export function Setup(p: ViewProps & { signOut: (everywhere?: boolean) => void }) {
   const { D } = p, ui = useUI();
   const owner = D.me.role === 'owner';
@@ -191,6 +217,7 @@ export function Setup(p: ViewProps & { signOut: (everywhere?: boolean) => void }
       <Staff {...p} />
       <Thresholds {...p} />
       <MonthBooks D={D} />
+      <AppProblems />
       {owner && D.settings.go_live && <Card title="Opening balances" aside={<span className="muted">went live {dnum(D.settings.go_live)}</span>}>
         <p className="muted" style={{ margin: '0 0 10px', fontSize: 14 }}>Re-entering counts adds a correction for the difference. Use the daily counts for routine checks.</p>
         <button className="btn sm alt" onClick={() => ui.openForm(openingForm(D))}>Re-enter opening balances</button></Card>}

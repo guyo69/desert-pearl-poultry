@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FAQS, TASKS, TIPS, score, words } from '../src/lib/help';
-import { ACTION_IDS } from '../src/ui/Help';
+import { ACTION_IDS } from '../src/ui/HelpPanels';
 
 const ALL = Object.values(TIPS).flat();
 const TEXT = JSON.stringify({ TIPS, TASKS, FAQS });
