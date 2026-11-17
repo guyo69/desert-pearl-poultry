@@ -16,7 +16,7 @@ import { NoticeList, OutstandingCredits } from './common';
 import { MonthBooks } from './MonthBooks';
 import { buildWeekReport } from '../lib/report';
 import { GUIDE } from '../lib/knowledge';
-import { MissingDays, gapSummary, useGaps } from './Journey';
+import { DayRanking, MissingDays, gapSummary, useGaps } from './Journey';
 
 export interface ViewProps { D: Dashboard; version: number; go: (tab: string) => void }
 
@@ -73,6 +73,7 @@ export function Alerts({ D, version }: ViewProps) {
   return <>
     <div className="sample"><div><h2>{D.me.role === 'manager' ? `Hello, ${D.me.display_name}` : 'Alerts'}</h2><div className="muted">{dlabel(D.today)} · Central Farm · {n0(hensNow(D))} hens</div></div></div>
     <MissingDays D={D} gaps={gaps} />
+    <DayRanking D={D} version={version} />
     <Card title="Alerts" aside={<span className={`chip ${A.some((a) => a.sev === 'red' || a.sev === 'orange') ? 'sev-orange' : 'sev-info'}`}>{A.length} open</span>}><AlertList list={A} /></Card>
     <div className="grid2"><FeedCard D={D} /><TankCard D={D} /></div>
     <div className="grid2">

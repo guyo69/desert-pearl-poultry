@@ -144,6 +144,12 @@ Before you push, run `npm test` and `npm run build`. If you touch SQL, also run 
 - **Problem notes** (`src/lib/telemetry.ts`, `client_errors`, `rpc_log_client`): an error, a screen that could not open, a first screen slower than 4 s, a tap slower than 0.5 s, or figures slower than 8 s to load send a short note with the screen, the message, the time measured, the app version (`__APP_VERSION__`, the commit) and the kind of device. Never form values or figures: emails and long numbers are blanked on the phone and again in the database. At most one note of each kind per visit and 30 per person an hour.
 - **App problems card** (Settings, owner and farm manager; `rpc_client_errors(days)`): the last 14 days grouped by problem, with how often, how many people and which roles, devices, the slowest time and the details to pass to Sage Design Lab.
 
+## Days complete (17 Nov 2026)
+
+- **A person's day** comes from the same `completeness()` check as Days with gaps (`_my_day(role, location, c)`): the production clerk has every house (eggs and water), the inventory clerk the farm's feed issued to the houses, an outlet attendant or the van driver their own place. Closed outlet days and days the van stayed in are left out, and so are days before tracking began or before the person's account existed. Read only: no reminders, no email, nothing stored.
+- **This week** (field homes, under Do this next; `rpc_my_week()`): Monday to Sunday with a tick for each complete day, "2 of 3 days complete", and one line: complete days in a row, the last day something was missed, or what completes today. Hidden when offline.
+- **Days completed by each person** (Alerts, owner and farm manager; `rpc_day_ranking(days)`, 7 or 14 days to yesterday): each field person, best first, a square per day, what they last missed, and their last entry from the app (`client_ops`, since 12 Nov) or last sign-in. Two people at one place share its days.
+
 ## Open items
 
 - **Tank size:** `settings.tank_capacity_l` is 1,000 L while the farm sheet showed about 3,500 L drunk per house a day. Confirm the real tank size, then record a fresh tank reading.

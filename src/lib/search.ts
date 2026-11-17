@@ -77,6 +77,7 @@ export const SECTIONS: Section[] = [
   { title: 'Tank level', tabs: ['water'], keywords: 'tank level water reading', who: ['owner', 'manager', 'clerk'] },
   { title: 'Drinking by house', tabs: ['water'], keywords: 'water drinking house litres', who: ['owner', 'manager', 'clerk'] },
   { title: 'Days with gaps', tabs: ['alerts'], keywords: 'missed day gap missing earlier fill in', who: ['owner', 'manager'] },
+  { title: 'Days completed by each person', tabs: ['alerts'], keywords: 'ranking rank who completed complete staff performance days complete attendance league best', who: ['owner', 'manager'] },
   { title: 'Deliveries not yet confirmed', tabs: ['alerts'], keywords: 'deliveries transit not confirmed on the way', who: ['owner', 'manager'] },
   { title: 'Sales points right now', tabs: ['ov'], keywords: 'outlets sales points shops today stock cash', who: ['owner', 'manager'] },
   { title: 'Egg production', tabs: ['ov'], keywords: 'eggs production lay rate collected', who: ['owner', 'manager'] },

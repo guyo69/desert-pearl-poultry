@@ -106,6 +106,19 @@ export const dataVersion = () => rpc<{ v: number; day: string }>('data_version')
 /** Owner and farm manager: what was not entered on the last tracked days (the same check as the morning reminders). */
 export interface Gap { day: string; label: string; scope: 'house' | 'farm' | 'outlet'; id: string; name: string; location_id: string; missing: string[] }
 export const loadGaps = (days = 14) => rpc<Gap[]>('gaps', { p_days: days });
+/** A person's part of one day, from the same check as the gaps: complete, something missing, today still open, or not counted. */
+export type DayState = 'done' | 'missed' | 'today' | 'closed' | 'none' | 'later' | 'before';
+/** Field staff: their own Monday to Sunday (rpc_my_week). */
+export interface MyWeek { from: string; today: string; days: { day: string; label: string; state: DayState; missing?: string[] }[]; done: number; counted: number; streak: number }
+export const loadMyWeek = () => rpc<MyWeek>('rpc_my_week');
+/** Owner and farm manager: each field person's complete days, to yesterday (rpc_day_ranking). */
+export interface RankPerson {
+  id: string; name: string; role: 'clerk' | 'store' | 'pos'; location_id: string | null; place: string | null; van: boolean;
+  days: { day: string; state: DayState }[]; done: number; counted: number;
+  last_missed: { day: string; label: string; missing: string[] } | null; last_entry: string | null; last_signin: string | null;
+}
+export interface Ranking { from: string; to: string; people: RankPerson[] }
+export const loadRanking = (days = 7) => rpc<Ranking>('rpc_day_ranking', { p_days: days });
 /** Owner and farm manager: the last 7 days to yesterday, from the weekly insight engine. */
 export interface WeeklyInsight { kind: string; severity: 'red' | 'orange' | 'amber' | 'ok' | string; where: string; role: string; action: string; text: string }
 export interface WeeklyReport {

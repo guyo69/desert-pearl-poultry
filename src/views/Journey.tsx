@@ -1,7 +1,8 @@
 // The day's steps for each role, and the days that still have gaps.
 // Steps are worked out from the dashboard; gaps come from the server's completeness check.
 import { type ReactNode, useEffect, useState } from 'react';
-import { type Gap, loadGaps } from '../lib/api';
+import { type Gap, type MyWeek, type Ranking, loadGaps, loadMyWeek, loadRanking } from '../lib/api';
+import { rankNote, rate, weekCount, weekNote, whoIs } from '../lib/days';
 import { dlabel, dshort, eggs, kes } from '../lib/format';
 import { balance, canEnter, closedToday, feedUsed, isVan, locName, mix, produced, salesOn, stockNow, tankInfo, tot, waterOn } from '../lib/metrics';
 import type { Dashboard } from '../lib/types';
@@ -10,7 +11,7 @@ import {
 } from '../forms/forms';
 import { Icon } from '../ui/icons';
 import { useUI } from '../ui/ui';
-import { Card } from '../ui/widgets';
+import { Card, Empty } from '../ui/widgets';
 import { WORK_COLOR, type Work } from '../ui/work';
 
 interface Step { label: string; detail: string; done: boolean; optional?: boolean; go?: () => void; act?: string; work?: Work; icon?: string }
@@ -33,10 +34,10 @@ function NextUp({ next, left, extra }: { next?: Step; left: number; extra?: Step
   </section>;
 }
 
-function Steps({ title, steps, aside }: { title: string; steps: Step[]; aside?: ReactNode }) {
+function Steps({ D, title, steps, aside }: { D: Dashboard; title: string; steps: Step[]; aside?: ReactNode }) {
   const left = steps.filter((s) => !s.done && !s.optional).length;
   const next = steps.find((s) => !s.done && !s.optional);
-  return <><NextUp next={next} left={left} extra={steps.find((s) => !s.done && s.optional && s.go)} /><Card tip="steps" title={title} aside={aside ?? <span className={`chip ${left ? 'sev-info' : 'sev-ok'}`}>{left ? `${left} to do` : 'All done'}</span>}>
+  return <><NextUp next={next} left={left} extra={steps.find((s) => !s.done && s.optional && s.go)} /><WeekDone D={D} /><Card tip="steps" title={title} aside={aside ?? <span className={`chip ${left ? 'sev-info' : 'sev-ok'}`}>{left ? `${left} to do` : 'All done'}</span>}>
     <ol className="steps">{steps.map((s, i) => <li key={i} className={`${s.done ? 'done' : ''}${s === next ? ' next' : ''}`}>
       <span className="tick" aria-hidden>{s.done ? <Icon name="check" /> : i + 1}</span>
       <div className="mid"><b>{s.label}{s.optional && !s.done ? <em> · if any</em> : null}</b><small>{s.detail}</small></div>
@@ -63,7 +64,7 @@ export function ClerkSteps({ D }: { D: Dashboard }) {
     { label: 'Deaths', detail: 'Record any birds that died, by house', done: D.farm_daily.some((r) => r.d === t && r.deaths > 0), optional: true, go: () => ui.openForm(mortForm(D)), act: 'Record', work: 'loss', icon: 'bird' },
     { label: 'Send eggs to the outlets', detail: sent ? 'Sent today. Each outlet confirms on arrival.' : 'Choose an outlet, enter the eggs, repeat for the next', done: sent, go: () => ui.openForm(dispatchForm(D, 'FARM')), act: 'Send', work: 'out', icon: 'truck' },
   ];
-  return <Steps title="Today on the farm" steps={steps} aside={<button className="lnk" onClick={() => ui.openForm(houseDayForm(D))}>Whole day in one sheet</button>} />;
+  return <Steps D={D} title="Today on the farm" steps={steps} aside={<button className="lnk" onClick={() => ui.openForm(houseDayForm(D))}>Whole day in one sheet</button>} />;
 }
 
 /** Inventory clerk: feed to the houses first, then deliveries and milling as they happen. */
@@ -78,7 +79,7 @@ export function StoreSteps({ D }: { D: Dashboard }) {
     ...((D.raw ?? []).length ? [{ label: 'Milling', detail: milled ? 'Milled today' : 'After each mixing, enter the tonnes', done: milled, optional: true, go: () => ui.openForm(millForm(D)), act: 'Feed milled', work: 'make' as Work, icon: 'scoop' }] : []),
     { label: 'Running low', detail: low.length ? `Tell the farm manager: ${low.map((x) => x.name).slice(0, 3).join(', ')}${low.length > 3 ? ` and ${low.length - 3} more` : ''}` : 'Nothing below its reorder level', done: !low.length, optional: true },
   ];
-  return <Steps title="Today in the store" steps={steps} />;
+  return <Steps D={D} title="Today in the store" steps={steps} />;
 }
 
 /** Shops, van and farm counter: open, receive, sell, issue / damaged, close. */
@@ -109,7 +110,7 @@ export function VanSteps({ D, loc }: { D: Dashboard; loc: string }) {
     { label: 'Bank or send the cash', detail: cash > 0 ? `${kes(cash)} with the driver` : 'No cash with the driver',
       done: cash <= 0, optional: cash <= 0, go: () => ui.openForm(moveForm(D, loc)), act: 'Move money', work: 'spend', icon: 'swap' },
   ];
-  return <Steps title="Today on the van" steps={steps} />;
+  return <Steps D={D} title="Today on the van" steps={steps} />;
 }
 
 function OutletSteps({ D, loc }: { D: Dashboard; loc: string }) {
@@ -128,8 +129,59 @@ function OutletSteps({ D, loc }: { D: Dashboard; loc: string }) {
     { label: 'Send eggs', detail: has(D, loc, t, 'out') ? 'Sent to another location today' : 'To another outlet or the van', done: has(D, loc, t, 'out'), optional: true, go: () => ui.openForm(dispatchForm(D, loc)), act: 'Send', work: 'out', icon: 'truck' },
     { label: 'Close the day', detail: closed ? 'Closed: stock and cash counted' : 'Count the eggs left and the cash in the drawer', done: closed, go: () => ui.openForm(countForm(D, loc, 'close')), act: 'Close', work: 'check', icon: 'count' },
   ];
-  return <Steps title={resting ? 'Closed today: regular closing day' : "Today's steps"} steps={resting ? steps.map((x) => ({ ...x, optional: true })) : steps}
+  return <Steps D={D} title={resting ? 'Closed today: regular closing day' : "Today's steps"} steps={resting ? steps.map((x) => ({ ...x, optional: true })) : steps}
     aside={<button className="lnk" onClick={() => ui.openForm(shopDayForm(D, loc))}>Daily stock sheet</button>} />;
+}
+
+const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+const STATE_WORD: Record<string, string> = { done: 'complete', missed: 'something missing', today: 'today, still open', closed: 'closed, not counted', none: 'not counted', later: 'to come', before: 'not counted' };
+
+/**
+ * Field staff: Monday to Sunday under Do this next. A day is complete when
+ * every step of theirs is entered (the same check as Days with gaps, so
+ * closed days are left out). Refreshed with the figures; hidden offline.
+ */
+function WeekDone({ D }: { D: Dashboard }) {
+  const [w, setW] = useState<MyWeek | null>(null);
+  useEffect(() => { let live = true; loadMyWeek().then((x) => live && setW(x)).catch(() => live && setW(null)); return () => { live = false; }; }, [D]);
+  if (!w || !Array.isArray(w.days)) return null;
+  const van = isVan(D, D.me.location_id ?? '');
+  return <section className="week" data-tip="week" aria-label={`This week: ${weekCount(w)}`}>
+    <div className="wk-h"><b>This week</b><span className={`chip ${w.counted && w.done === w.counted ? 'sev-ok' : ''}`}>{weekCount(w)}</span></div>
+    <ol className="wk-days">{w.days.map((d, i) => <li key={d.day} className={`wk-${d.state}`} title={`${d.label}: ${STATE_WORD[d.state] ?? ''}`}>
+      <small>{DOW[i]}</small>
+      <span className="wk-dot" aria-hidden="true">{d.state === 'done' ? <Icon name="check" /> : d.state === 'missed' ? <Icon name="x" /> : d.state === 'closed' ? '–' : null}</span>
+      <small className="wk-n">{Number(d.day.slice(8))}</small>
+      <span className="sr">{d.label}: {STATE_WORD[d.state]}</span>
+    </li>)}</ol>
+    <p className="wk-note">{w.streak >= 2 && <Icon name="pulse" />}{weekNote(w, van)}</p>
+  </section>;
+}
+
+/**
+ * Owner and farm manager: each field person's complete days to yesterday,
+ * best first, from the same check as Days with gaps. Two people at one place
+ * share its days. Read only: no reminder is sent from here.
+ */
+export function DayRanking({ D, version }: { D: Dashboard; version?: number }) {
+  const [days, setDays] = useState(7);
+  const [r, setR] = useState<Ranking | null | 'err'>(null);
+  useEffect(() => { setR(null); loadRanking(days).then(setR).catch(() => setR('err')); }, [days, version]);
+  const people = r && r !== 'err' ? r.people ?? [] : [];
+  return <Card tip="ranking" title="Days completed by each person" aside={<div className="seg" role="group" aria-label="Days">{[7, 14].map((n) => <button key={n} aria-pressed={days === n} onClick={() => setDays(n)}>{n} days</button>)}</div>}>
+    {r === null ? <div className="skel" style={{ height: 180 }} />
+      : r === 'err' ? <Empty icon="clock">Could not load the list. It shows again when the connection is back.</Empty>
+      : !people.length ? <Empty icon="user">No field staff to show yet.</Empty>
+      : <><div className="list rank">{people.map((p, i) => {
+        const k = rate(p), tone = k === null ? 'none' : k >= 0.85 ? 'good' : k >= 0.5 ? 'mid' : 'low';
+        return <div className={`li rk-${tone}`} key={p.id}>
+          <span className="rk-n" aria-hidden="true">{k === null ? '–' : i + 1}</span>
+          <div className="mid"><b>{p.name}</b><small>{whoIs(p)}</small><small className="rk-note">{rankNote(p, D.today)}</small>
+            <span className="rk-days" aria-hidden="true">{p.days.map((d) => <i key={d.day} className={`wk-${d.state}`} title={`${d.day}: ${STATE_WORD[d.state] ?? ''}`} />)}</span></div>
+          <div className="end">{p.counted ? <>{p.done} of {p.counted}<small>days complete</small></> : <span className="muted">No days</span>}</div>
+        </div>; })}</div>
+      <p className="muted" style={{ margin: '10px 0 0', fontSize: 13 }}>{r.from <= r.to ? `${dlabel(r.from)} to ${dlabel(r.to)}. ` : ''}Green is a complete day, orange a day with something missing. A day counts when everything that person enters is in. Closed days, and days the van stayed in, are left out. People at the same place share its days.</p></>}
+  </Card>;
 }
 
 /** Owner and farm manager: what was not entered on the last 62 tracked days (as far back as a skipped day can be entered), newest first. Null while loading. */
